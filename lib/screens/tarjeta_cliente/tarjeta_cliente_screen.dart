@@ -16,7 +16,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   int? cuotaSeleccionada;
   bool _isLoading = true;
 
-  // guardamos la fecha normalizada del primer pago
+  // fecha normalizada del primer pago
   late DateTime primerPagoDate;
 
   @override
@@ -59,16 +59,26 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
   Future<void> _registrarPago() async {
     if (cuotaSeleccionada == null) return;
-    final num diario = cliente!['cuota_diaria'];
-    final num saldo = cliente!['saldo_pendiente'];
-    final num monto = saldo < diario ? saldo : diario;
+
+    final num diario = cliente!['cuota_diaria'] as num;
+    final num ultima = cliente!['ultima_cuota'] as num;
+    final num saldo = cliente!['saldo_pendiente'] as num;
+    final int plazoDias = cliente!['plazo_dias'] as int;
+
+    // Si es la última cuota, usamos `ultima`, si no, `diario`
+    final bool esUltima = cuotaSeleccionada == plazoDias;
+    final num valorCuota = esUltima ? ultima : diario;
+
+    // Pero nunca pasarnos del saldo pendiente
+    final num montoAPagar = saldo < valorCuota ? saldo : valorCuota;
 
     try {
       await supabase.from('pagos').insert({
         'cliente_id': widget.clienteId,
         'numero_cuota': cuotaSeleccionada,
-        'monto_pagado': monto,
+        'monto_pagado': montoAPagar,
       });
+      // opcional: actualización local si la usas para algo
       await supabase.from('clientes').update(
           {'ultima_cuota': cuotaSeleccionada}).eq('id', widget.clienteId);
 
@@ -82,43 +92,28 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   Future<void> _confirmarYRegistrarPago() async {
+    final num diario = cliente!['cuota_diaria'] as num;
+    final num ultima = cliente!['ultima_cuota'] as num;
+    final int plazoDias = cliente!['plazo_dias'] as int;
+
+    final bool esUltima = cuotaSeleccionada == plazoDias;
+    final num valorCuota = esUltima ? ultima : diario;
+
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        title: const Text(
-          'Confirmar pago',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Confirmar pago'),
         content: Text(
           '¿Deseas registrar el pago de la cuota $cuotaSeleccionada '
-          'por S/${cliente!['cuota_diaria']}?',
-          style: const TextStyle(color: Colors.black),
+          'por S/$valorCuota?',
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            style: TextButton.styleFrom(foregroundColor: Colors.black),
-            child: const Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFBBDEFB),
-              foregroundColor: Colors.black,
-              elevation: 6,
-              shadowColor: Colors.black26,
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text('Confirmar'),
-          ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Confirmar')),
         ],
       ),
     );
@@ -190,6 +185,16 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final estadoRaw = cliente!['estado_pago'] as String;
     final diasAtraso = cliente!['dias_atraso'] as int;
 
+    // <<< NUEVA LÓGICA PARA DISPLAY DE ÚLTIMA CUOTA >>>
+    final hoy = DateTime.now();
+    final today = DateTime(hoy.year, hoy.month, hoy.day);
+    final ultimoVenc = primerPagoDate.add(Duration(days: plazoDias - 1));
+    final esUltimoDia = today == ultimoVenc;
+    final displayCuota = (esUltimoDia && saldoPendiente < cuotaDiaria)
+        ? saldoPendiente
+        : cuotaDiaria;
+    // <<< FIN CAMBIO >>>
+
     final label = _estadoLabel(estadoRaw, diasAtraso);
     final color = _estadoColor(estadoRaw);
 
@@ -229,7 +234,11 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       label: 'Saldo pendiente:',
                       value: 'S/${saldoPendiente.toStringAsFixed(2)}',
                       color: Colors.red),
-                  _InfoRow(label: 'Cuota diaria:', value: 'S/$cuotaDiaria'),
+                  // Aquí mostramos displayCuota en lugar de cuotaDiaria:
+                  _InfoRow(
+                    label: 'Cuota diaria:',
+                    value: 'S/${displayCuota.toStringAsFixed(2)}',
+                  ),
                   const SizedBox(height: 6),
                   Text(label,
                       style:

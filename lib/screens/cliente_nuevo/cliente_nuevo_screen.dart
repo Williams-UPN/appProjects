@@ -19,10 +19,9 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
   final _montoCtrl = TextEditingController();
 
   int? _plazoDias;
-  final DateTime _fechaCreacion = DateTime.now();
   DateTime _fechaPrimerPago = DateTime.now().add(const Duration(days: 1));
-  DateTime _fechaFinal = DateTime.now().add(const Duration(days: 1));
 
+  // Variables para la vista previa; NO se envían al servidor:
   int _totalPagar = 0;
   int _cuotaDiaria = 0;
   int _ultimaCuota = 0;
@@ -30,6 +29,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
   bool _loading = false;
   int _currentStep = 0;
 
+  /// Recalcula solo para mostrar al usuario (preview).
   void _recalcular() {
     final monto = int.tryParse(_montoCtrl.text) ?? 0;
     final plazo = _plazoDias ?? 0;
@@ -38,10 +38,10 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
       _totalPagar = monto + (monto * tasa ~/ 100);
       _cuotaDiaria = (_totalPagar / plazo).ceil();
       _ultimaCuota = _totalPagar - _cuotaDiaria * (plazo - 1);
-      _fechaFinal = _fechaPrimerPago.add(Duration(days: plazo - 1));
+      // _fechaFinal ya no existe, así que omitimos esa línea
     } else {
       _totalPagar = _cuotaDiaria = _ultimaCuota = 0;
-      _fechaFinal = _fechaPrimerPago;
+      // idem: no reasignamos _fechaFinal
     }
     setState(() {});
   }
@@ -66,6 +66,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
     return montoValido && plazoValido;
   }
 
+  /// Envía SOLO los campos canónicos al servidor.
   Future<void> _guardarTodo() async {
     if (!_formKeyCliente.currentState!.validate()) {
       setState(() => _currentStep = 0);
@@ -75,6 +76,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
       setState(() => _currentStep = 1);
       return;
     }
+
     setState(() => _loading = true);
     try {
       final supabase = Supabase.instance.client;
@@ -85,14 +87,10 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
         'negocio': _negocioCtrl.text,
         'monto_solicitado': int.parse(_montoCtrl.text),
         'plazo_dias': _plazoDias,
-        'fecha_creacion': _fechaCreacion.toUtc().toIso8601String(),
         'fecha_primer_pago': _fechaPrimerPago.toUtc().toIso8601String(),
-        'fecha_final': _fechaFinal.toUtc().toIso8601String(),
-        'total_pagar': _totalPagar,
-        'cuota_diaria': _cuotaDiaria,
-        'ultima_cuota': _ultimaCuota,
       };
       await supabase.from('clientes').insert(data);
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Registro guardado exitosamente')),
@@ -214,9 +212,10 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                         onTap: _pickFechaPrimerPago,
                         title: const Text('Fecha de primer pago'),
                         subtitle: Text(
-                            '${_fechaPrimerPago.year.toString().padLeft(4, '0')}-'
-                            '${_fechaPrimerPago.month.toString().padLeft(2, '0')}-'
-                            '${_fechaPrimerPago.day.toString().padLeft(2, '0')}'),
+                          '${_fechaPrimerPago.year.toString().padLeft(4, '0')}-'
+                          '${_fechaPrimerPago.month.toString().padLeft(2, '0')}-'
+                          '${_fechaPrimerPago.day.toString().padLeft(2, '0')}',
+                        ),
                         trailing: const Icon(Icons.calendar_today),
                       ),
                       ListTile(

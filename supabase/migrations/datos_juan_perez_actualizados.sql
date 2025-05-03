@@ -1,62 +1,91 @@
--- Inserta al cliente con primer pago el 17-Abr-2025 (de modo que el día 17ª sea el 03-May-2025)
-INSERT INTO clientes (
+BEGIN;
+
+-- 1) Deshabilitar solo la validación de fecha (y mantener el recálculo activo)
+ALTER TABLE public.clientes DISABLE TRIGGER trg_clientes_bi;
+ALTER TABLE public.clientes DISABLE TRIGGER trg_clientes_bu;
+
+-- 2) Inserciones de prueba CON TODOS LOS CAMPOS
+
+-- Cliente Atrasado (17-Abr-2025, plazo 24 días)
+INSERT INTO public.clientes (
   nombre, telefono, direccion, negocio,
-  monto_solicitado, plazo_dias,
-  fecha_primer_pago, fecha_final,
-  total_pagar, cuota_diaria, ultima_cuota
+  monto_solicitado, plazo_dias, fecha_primer_pago,
+  fecha_final, total_pagar, cuota_diaria, ultima_cuota
 ) VALUES (
   'Cliente Atrasado', '999111222', 'Calle Falsa 123', 'Negocio A',
-  2400, 24,
-  '2025-04-17'::timestamptz,  -- primer pago
-  '2025-05-10'::timestamptz,  -- primer_pago + 23 días
-  2400, 100, 0
+  2400, 24, '2025-04-17'::timestamptz,
+  '2025-05-10'::timestamptz, 2880, 120, 120
 );
-
--- El trigger generará automáticamente 24 filas en cronograma (17-Abr → 10-May).
-
--- Marcar las cuotas 1..14 como pagadas (fechas 17-Abr → 29-Abr)
-INSERT INTO pagos (cliente_id, numero_cuota, monto_pagado, fecha_pago)
-SELECT c.id, gs, 100, (date '2025-04-17' + (gs-1))::timestamptz + time '10:00'
-FROM clientes c
-CROSS JOIN generate_series(1,14) gs
+INSERT INTO public.pagos (cliente_id, numero_cuota, monto_pagado, fecha_pago)
+SELECT c.id, gs, 120, (date '2025-04-17' + (gs-1))::timestamptz + time '10:00'
+FROM public.clientes c
+CROSS JOIN generate_series(1,14) AS gs
 WHERE c.nombre = 'Cliente Atrasado';
 
--- Ahora:
---   cuotas_vencidas = count de 15 y 16 (fechas 2025-04-30 y 2025-05-01) → 2 días de atraso
---   cuota_hoy_pend = fecha 2025-05-03 (cuota 17) sin pagar
---   estado_pago = 'atrasado'
---   dias_atraso = 2
---   ultima_cuota = 14
---   saldo_pendiente = total_pagar - sum(pagos) = 2400 - 1400 = 1000
-
-
--- Inserta al cliente con primer pago el 23-Abr-2025 (de modo que la 11ª cuota caiga el 03-May)
-INSERT INTO clientes (
+-- Cliente Hoy Pendiente (23-Abr-2025, plazo 12 días)
+INSERT INTO public.clientes (
   nombre, telefono, direccion, negocio,
-  monto_solicitado, plazo_dias,
-  fecha_primer_pago, fecha_final,
-  total_pagar, cuota_diaria, ultima_cuota
+  monto_solicitado, plazo_dias, fecha_primer_pago,
+  fecha_final, total_pagar, cuota_diaria, ultima_cuota
 ) VALUES (
   'Cliente Hoy Pendiente', '999333444', 'Av. Siempre Viva', 'Negocio B',
-  1200, 12,
-  '2025-04-23'::timestamptz,
-  '2025-05-04'::timestamptz,  -- primer_pago + 11 días
-  1200, 100, 0
+  1200, 12, '2025-04-23'::timestamptz,
+  '2025-05-04'::timestamptz, 1320, 110, 110
 );
-
--- Se generarán 12 cuotas del 23-Abr al 04-May.
-
--- Marcar cuotas 1..9 como pagadas (23-Abr → 01-May)
-INSERT INTO pagos (cliente_id, numero_cuota, monto_pagado, fecha_pago)
-SELECT c.id, gs, 100, (date '2025-04-23' + (gs-1))::timestamptz + time '11:00'
-FROM clientes c
-CROSS JOIN generate_series(1,9) gs
+INSERT INTO public.pagos (cliente_id, numero_cuota, monto_pagado, fecha_pago)
+SELECT c.id, gs, 110, (date '2025-04-23' + (gs-1))::timestamptz + time '11:00'
+FROM public.clientes c
+CROSS JOIN generate_series(1,9) AS gs
 WHERE c.nombre = 'Cliente Hoy Pendiente';
 
--- Ahora:
---   cuotas_vencidas = count de cuota 10 (fecha 2025-05-02) → 1 día de atraso
---   cuota_hoy_pend = cuota 11 (fecha 2025-05-03) sin pagar
---   estado_pago = 'atrasado'
---   dias_atraso = 1
---   ultima_cuota = 9
---   saldo_pendiente = 1200 - 900 = 300
+-- Cliente Hoy-Mañana (04-May primer pago, 12 días)
+INSERT INTO public.clientes (
+  nombre, telefono, direccion, negocio,
+  monto_solicitado, plazo_dias, fecha_primer_pago,
+  fecha_final, total_pagar, cuota_diaria, ultima_cuota
+) VALUES (
+  'Cliente Hoy-Mañana', '999555666', 'Calle Tres', 'Negocio C',
+  1000, 12, '2025-05-04'::timestamptz,
+  '2025-05-15'::timestamptz, 1100, 92, 92
+);
+
+-- Cliente Hoy-Hoy (03-May registro y primer pago, 12 días)
+INSERT INTO public.clientes (
+  nombre, telefono, direccion, negocio,
+  monto_solicitado, plazo_dias, fecha_primer_pago,
+  fecha_final, total_pagar, cuota_diaria, ultima_cuota
+) VALUES (
+  'Cliente Hoy-Hoy', '999777888', 'Avenida Cuatro', 'Negocio D',
+  1000, 12, '2025-05-03'::timestamptz,
+  '2025-05-14'::timestamptz, 1100, 92, 92
+);
+INSERT INTO public.pagos (cliente_id, numero_cuota, monto_pagado, fecha_pago)
+SELECT id, 1, 92, '2025-05-03 10:00'::timestamptz
+FROM public.clientes
+WHERE nombre = 'Cliente Hoy-Hoy';
+
+-- **Cuarto cliente**: plazo 12 días, primer pago 22-Abr-2025, última cuota 03-May-2025
+-- Pagos únicamente de las cuotas 1..10; las cuotas 11 y 12 quedan sin pagar.
+INSERT INTO public.clientes (
+  nombre, telefono, direccion, negocio,
+  monto_solicitado, plazo_dias, fecha_primer_pago,
+  fecha_final, total_pagar, cuota_diaria, ultima_cuota
+) VALUES (
+  'Cliente Falta 11', '999999000', 'Paseo Central', 'Negocio E',
+  1000, 12, '2025-04-22'::timestamptz,
+  '2025-05-03'::timestamptz, 1100, 92,  88
+);
+
+-- Pagos cuotas 1..10 (22-Abr → 01-May)
+INSERT INTO public.pagos (cliente_id, numero_cuota, monto_pagado, fecha_pago)
+SELECT c.id, gs, 92, (date '2025-04-22' + (gs-1))::timestamptz + time '09:00'
+FROM public.clientes c
+CROSS JOIN generate_series(1,10) AS gs
+WHERE c.nombre = 'Cliente Falta 11';
+
+
+-- 3) Volver a habilitar triggers de validación/recálculo
+ALTER TABLE public.clientes ENABLE TRIGGER trg_clientes_bi;
+ALTER TABLE public.clientes ENABLE TRIGGER trg_clientes_bu;
+
+COMMIT;
