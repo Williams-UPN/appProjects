@@ -1,0 +1,10 @@
+{
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.project.import.exclusions": [
+      "**/android/**"
+    ],
+    "files.exclude": {
+      "**/android/**": true
+    }
+  }
+  
