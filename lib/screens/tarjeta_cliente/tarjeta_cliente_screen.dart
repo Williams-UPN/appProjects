@@ -62,15 +62,10 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
     final num diario = cliente!['cuota_diaria'] as num;
     final num ultima = cliente!['ultima_cuota'] as num;
-    final num saldo = cliente!['saldo_pendiente'] as num;
     final int plazoDias = cliente!['plazo_dias'] as int;
 
-    // Si es la última cuota, usamos `ultima`, si no, `diario`
     final bool esUltima = cuotaSeleccionada == plazoDias;
-    final num valorCuota = esUltima ? ultima : diario;
-
-    // Pero nunca pasarnos del saldo pendiente
-    final num montoAPagar = saldo < valorCuota ? saldo : valorCuota;
+    final num montoAPagar = esUltima ? ultima : diario;
 
     try {
       await supabase.from('pagos').insert({
@@ -78,11 +73,9 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         'numero_cuota': cuotaSeleccionada,
         'monto_pagado': montoAPagar,
       });
-      // opcional: actualización local si la usas para algo
-      await supabase.from('clientes').update(
-          {'ultima_cuota': cuotaSeleccionada}).eq('id', widget.clienteId);
 
-      _fetchData();
+      // Luego recargamos para obtener el saldo actualizado
+      await _fetchData();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
