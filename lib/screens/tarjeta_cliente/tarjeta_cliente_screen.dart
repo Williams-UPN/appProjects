@@ -88,30 +88,106 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final num diario = cliente!['cuota_diaria'] as num;
     final num ultima = cliente!['ultima_cuota'] as num;
     final int plazoDias = cliente!['plazo_dias'] as int;
-
     final bool esUltima = cuotaSeleccionada == plazoDias;
     final num valorCuota = esUltima ? ultima : diario;
 
+    String? obsIncidencia;
+
     final confirmado = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Confirmar pago'),
-        content: Text(
-          '¿Deseas registrar el pago de la cuota $cuotaSeleccionada '
-          'por S/$valorCuota?',
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Confirmar')),
-        ],
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 1) Título en mayúsculas y centrado
+              Text(
+                'CONFIRMAR PAGO',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              // 2) Texto justificiado
+              Text(
+                '¿Registrar pago de la cuota '
+                '$cuotaSeleccionada \npor S/${valorCuota.toStringAsFixed(2)}?',
+                textAlign: TextAlign.justify,
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxHeight: 150,
+                ),
+                child: TextField(
+                  minLines: 1,
+                  maxLines: 5,
+                  onChanged: (t) =>
+                      obsIncidencia = t.trim().isEmpty ? null : t.trim(),
+                  decoration: InputDecoration(
+                    hintText: 'Observaciones (opcional)',
+                    isDense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text(
+                      'Cancelar',
+                      style: TextStyle(letterSpacing: 1),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text(
+                      'Confirmar',
+                      style: TextStyle(letterSpacing: 1),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
 
     if (confirmado == true) {
+      if (obsIncidencia != null) {
+        await supabase.from('historial_eventos').insert({
+          'cliente_id': widget.clienteId,
+          'descripcion': obsIncidencia,
+        });
+      }
       await _registrarPago();
     }
   }
