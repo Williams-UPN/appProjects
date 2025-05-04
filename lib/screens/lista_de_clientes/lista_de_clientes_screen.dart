@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../tarjeta_cliente/tarjeta_cliente_screen.dart'; // asegúrate que esta ruta sea correcta
+import '../tarjeta_cliente/tarjeta_cliente_screen.dart'; // Ajusta la ruta si es necesario
 
 class ListaDeClientesScreen extends StatefulWidget {
   const ListaDeClientesScreen({super.key});
@@ -12,39 +12,48 @@ class ListaDeClientesScreen extends StatefulWidget {
 class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
   final supabase = Supabase.instance.client;
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchCtrl = TextEditingController();
 
   List<Map<String, dynamic>> _clientes = [];
+  List<Map<String, dynamic>> _filteredClientes = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
   int _page = 0;
   static const int _pageSize = 20;
+  String _searchTerm = '';
 
   @override
   void initState() {
     super.initState();
     _fetchClientes();
     _scrollController.addListener(_onScroll);
+    _searchCtrl.addListener(() {
+      setState(() {
+        _searchTerm = _searchCtrl.text.toLowerCase();
+        _applyLocalFilter();
+      });
+    });
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  // Carga inicial
   Future<void> _fetchClientes() async {
     setState(() => _isLoading = true);
     try {
       final data = await supabase
           .from('clientes')
-          .select()
+          .select('id, nombre, telefono, direccion, negocio, estado_pago')
           .order('id', ascending: true)
-          .range(0, _pageSize - 1); // primeros 20
+          .range(0, _pageSize - 1);
       if (!mounted) return;
-      setState(() {
-        _clientes = List<Map<String, dynamic>>.from(data);
-      });
+      _clientes = List<Map<String, dynamic>>.from(data);
+      _page = 0;
+      _applyLocalFilter();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -55,7 +64,21 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     }
   }
 
-  // Paginado al llegar al final
+  void _applyLocalFilter() {
+    if (_searchTerm.isEmpty) {
+      _filteredClientes = List.from(_clientes);
+    } else {
+      _filteredClientes = _clientes.where((c) {
+        final nombre = (c['nombre'] as String).toLowerCase();
+        final telefono = (c['telefono'] as String).toLowerCase();
+        final negocio = (c['negocio'] as String? ?? '').toLowerCase();
+        return nombre.contains(_searchTerm) ||
+            telefono.contains(_searchTerm) ||
+            negocio.contains(_searchTerm);
+      }).toList();
+    }
+  }
+
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 100) {
@@ -72,91 +95,178 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     try {
       final data = await supabase
           .from('clientes')
-          .select()
+          .select('id, nombre, telefono, direccion, negocio, estado_pago')
           .order('id', ascending: true)
           .range(from, to);
       final more = List<Map<String, dynamic>>.from(data);
       if (more.isNotEmpty && mounted) {
-        setState(() {
-          _clientes.addAll(more);
-        });
+        _clientes.addAll(more);
+        _applyLocalFilter();
       }
-    } catch (e) {
-      // opcional: mostrar error
+    } catch (_) {
+      // Manejo opcional de error
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
+  }
+
+  Color _colorParaEstado(String estado) {
+    switch (estado) {
+      case 'al_dia':
+        return Colors.green;
+      case 'pendiente':
+        return Colors.orange;
+      case 'atrasado':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _labelParaEstado(String estado) {
+    switch (estado) {
+      case 'al_dia':
+        return 'Al día';
+      case 'pendiente':
+        return 'Vence hoy';
+      case 'atrasado':
+        return 'Atrasado';
+      default:
+        return '';
+    }
+  }
+
+  Widget _buildStatusChip(String estado) {
+    final color = _colorParaEstado(estado);
+    final label = _labelParaEstado(estado);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.circle, size: 10, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 12, color: color)),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Lista de Clientes')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: _clientes.length + (_isLoadingMore ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index >= _clientes.length) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-                final c = _clientes[index];
-                return InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            TarjetaClienteScreen(clienteId: c['id']),
+      body: Column(
+        children: [
+          // Barra de búsqueda
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Container(
+              height: 48, // campo un poco más alto
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey
+                    .shade100, // off-white suave :contentReference[oaicite:0]{index=0}
+                borderRadius: BorderRadius.circular(24), // forma “pill”
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha((0.05 * 255).round()),
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.search, size: 20, color: Colors.grey),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: const InputDecoration(
+                        hintText: 'Buscar cliente…',
+                        hintStyle: TextStyle(fontSize: 14, color: Colors.grey),
+                        border: InputBorder.none, // sin borde interno
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
                       ),
-                    );
-                  },
-                  child: Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    elevation: 6,
-                    color: const Color.fromARGB(
-                        255, 255, 255, 255), // azul claro suave
-                    child: ListTile(
-                      title: Text(
-                        c['nombre'] as String,
-                        style: const TextStyle(
-                          color: Color.fromARGB(255, 7, 0, 0), // texto oscuro
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Teléfono: ${c['telefono']}',
-                            style: const TextStyle(
-                                color: Color.fromARGB(255, 7, 0, 0)),
-                          ),
-                          Text(
-                            'Dirección: ${c['direccion']}',
-                            style: const TextStyle(
-                                color: Color.fromARGB(255, 7, 0, 0)),
-                          ),
-                          Text(
-                            'Negocio: ${c['negocio']}',
-                            style: const TextStyle(
-                                color: Color.fromARGB(255, 7, 0, 0)),
-                          ),
-                        ],
-                      ),
-                      isThreeLine: true,
+                      style: const TextStyle(fontSize: 14),
                     ),
                   ),
-                );
-              },
+                  if (_searchTerm.isNotEmpty)
+                    GestureDetector(
+                      onTap: () => _searchCtrl.clear(),
+                      child:
+                          const Icon(Icons.close, size: 20, color: Colors.grey),
+                    ),
+                ],
+              ),
             ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount:
+                        _filteredClientes.length + (_isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index >= _filteredClientes.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      final c = _filteredClientes[index];
+                      return InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  TarjetaClienteScreen(clienteId: c['id']),
+                            ),
+                          );
+                        },
+                        child: Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 4,
+                          child: ListTile(
+                            title: Text(
+                              c['nombre'] as String,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Teléfono: ${c['telefono']}'),
+                                Text('Dirección: ${c['direccion']}'),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'Negocio: ${c['negocio'] ?? '-'}',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    _buildStatusChip(
+                                      c['estado_pago'] as String,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            isThreeLine: true,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
