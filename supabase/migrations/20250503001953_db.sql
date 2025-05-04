@@ -27,23 +27,24 @@ DROP TABLE IF EXISTS public.cliente_historial CASCADE;
 -- 1. TABLAS
 -- ==========================================================
 CREATE TABLE public.clientes (
-  id                BIGSERIAL PRIMARY KEY,
-  nombre            TEXT        NOT NULL,
-  telefono          TEXT        NOT NULL,
-  direccion         TEXT        NOT NULL,
-  negocio           TEXT,
-  monto_solicitado  NUMERIC     NOT NULL DEFAULT 0,
-  plazo_dias        INTEGER     NOT NULL DEFAULT 0,
-  fecha_creacion    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  fecha_primer_pago TIMESTAMPTZ NOT NULL,
-  fecha_final       TIMESTAMPTZ NOT NULL,
-  total_pagar       NUMERIC     NOT NULL DEFAULT 0,
-  cuota_diaria      NUMERIC     NOT NULL DEFAULT 0,
-  ultima_cuota      NUMERIC     NOT NULL DEFAULT 0,
-  saldo_pendiente   NUMERIC     NOT NULL DEFAULT 0,
-  dias_atraso       INTEGER     NOT NULL DEFAULT 0,
-  estado_pago       TEXT        NOT NULL DEFAULT 'al_dia',
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                     BIGSERIAL PRIMARY KEY,
+  nombre                 TEXT        NOT NULL,
+  telefono               TEXT        NOT NULL,
+  direccion              TEXT        NOT NULL,
+  negocio                TEXT,
+  monto_solicitado       NUMERIC     NOT NULL DEFAULT 0,
+  plazo_dias             INTEGER     NOT NULL DEFAULT 0,
+  fecha_creacion         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  fecha_primer_pago      TIMESTAMPTZ NOT NULL,
+  fecha_final            TIMESTAMPTZ NOT NULL,
+  total_pagar            NUMERIC     NOT NULL DEFAULT 0,
+  cuota_diaria           NUMERIC     NOT NULL DEFAULT 0,
+  ultima_cuota           NUMERIC     NOT NULL DEFAULT 0,
+  saldo_pendiente        NUMERIC     NOT NULL DEFAULT 0,
+  dias_atraso            INTEGER     NOT NULL DEFAULT 0,
+  estado_pago            TEXT        NOT NULL DEFAULT 'al_dia',
+  ultima_cuota_numero    INTEGER     NOT NULL DEFAULT 0,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE public.cronograma (
@@ -152,11 +153,12 @@ BEGIN
   v_std    := ceil(v_total / NEW.plazo_dias);
   v_last   := v_total - v_std * (NEW.plazo_dias - 1);
 
-  NEW.total_pagar    := v_total;
-  NEW.cuota_diaria   := v_std;
-  NEW.ultima_cuota   := v_last;
-  NEW.fecha_final    := ((NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date 
-                          + (NEW.plazo_dias - 1) * INTERVAL '1 day');
+  NEW.total_pagar       := v_total;
+  NEW.cuota_diaria      := v_std;
+  NEW.ultima_cuota      := v_last;
+  NEW.fecha_final       := ((NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date 
+                             + (NEW.plazo_dias - 1) * INTERVAL '1 day');
+  NEW.ultima_cuota_numero := 0;
 
   RETURN NEW;
 END;
@@ -197,7 +199,8 @@ DECLARE
 BEGIN
   PERFORM public._crear_cronograma_aux(NEW.id);
   UPDATE public.clientes
-    SET saldo_pendiente = NEW.total_pagar
+    SET saldo_pendiente     = NEW.total_pagar,
+        ultima_cuota_numero = 0
     WHERE id = NEW.id;
 
   IF v_fp > v_hoy THEN
@@ -257,10 +260,11 @@ DECLARE
   cuotas_vencidas   INTEGER;
   cuota_hoy_pend    BOOLEAN;
   todas_pagadas     BOOLEAN;
-  ultima_pagada     INTEGER;
+  ultima_pag_num    INTEGER;
   total_pagado      NUMERIC;
   est_final         TEXT;
 BEGIN
+  -- marca/desmarca en cronograma
   IF TG_OP = 'INSERT' THEN
     UPDATE public.cronograma
       SET fecha_pagado = (NEW.fecha_pago AT TIME ZONE 'America/Lima')::date
@@ -273,11 +277,13 @@ BEGIN
        AND numero_cuota = OLD.numero_cuota;
   END IF;
 
+  -- datos de cliente
   SELECT (fecha_primer_pago AT TIME ZONE 'America/Lima')::date
     INTO v_fp
     FROM public.clientes
    WHERE id = cid;
 
+  -- cálculos de atrasos y pagos
   SELECT COUNT(*) INTO cuotas_vencidas
     FROM public.cronograma
    WHERE cliente_id = cid
@@ -297,7 +303,7 @@ BEGIN
        AND fecha_pagado IS NULL
   ) INTO todas_pagadas;
 
-  SELECT COALESCE(MAX(numero_cuota), 0) INTO ultima_pagada
+  SELECT COALESCE(MAX(numero_cuota), 0) INTO ultima_pag_num
     FROM public.cronograma
    WHERE cliente_id = cid
      AND fecha_pagado IS NOT NULL;
@@ -306,6 +312,7 @@ BEGIN
     FROM public.pagos
    WHERE cliente_id = cid;
 
+  -- estado final
   IF v_fp > v_hoy THEN
     est_final := 'proximo';
   ELSE
@@ -317,11 +324,13 @@ BEGIN
     END;
   END IF;
 
+  -- actualiza cliente SIN tocar ultima_cuota (monto),
+  -- solo saldo y número de última cuota pagada
   UPDATE public.clientes
-    SET estado_pago     = est_final,
-        dias_atraso     = cuotas_vencidas,
-        ultima_cuota    = ultima_pagada,
-        saldo_pendiente = total_pagar - total_pagado
+    SET estado_pago          = est_final,
+        dias_atraso          = cuotas_vencidas,
+        saldo_pendiente      = (total_pagar - total_pagado),
+        ultima_cuota_numero  = ultima_pag_num
    WHERE id = cid;
 
   RETURN COALESCE(NEW, OLD);
@@ -345,11 +354,11 @@ ALTER TABLE public.pagos      DISABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION public.crear_historial_cerrado(p_cliente_id BIGINT)
   RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
-  v_cli              RECORD;
-  v_total_pagado     NUMERIC;
-  v_max_atraso       INTEGER;
+  v_cli               RECORD;
+  v_total_pagado      NUMERIC;
+  v_max_atraso        INTEGER;
   v_count_incidencias INTEGER;
-  v_score            INTEGER;
+  v_score             INTEGER;
 BEGIN
   SELECT * INTO v_cli
     FROM public.clientes

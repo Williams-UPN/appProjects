@@ -42,6 +42,13 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     super.dispose();
   }
 
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 100) {
+      _loadMore();
+    }
+  }
+
   Future<void> _fetchClientes() async {
     setState(() => _isLoading = true);
     try {
@@ -55,34 +62,13 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       _page = 0;
       _applyLocalFilter();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cargando clientes: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error cargando clientes: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _applyLocalFilter() {
-    if (_searchTerm.isEmpty) {
-      _filteredClientes = List.from(_clientes);
-    } else {
-      _filteredClientes = _clientes.where((c) {
-        final nombre = (c['nombre'] as String).toLowerCase();
-        final telefono = (c['telefono'] as String).toLowerCase();
-        final negocio = (c['negocio'] as String? ?? '').toLowerCase();
-        return nombre.contains(_searchTerm) ||
-            telefono.contains(_searchTerm) ||
-            negocio.contains(_searchTerm);
-      }).toList();
-    }
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 100) {
-      _loadMore();
     }
   }
 
@@ -104,9 +90,24 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         _applyLocalFilter();
       }
     } catch (_) {
-      // opcional
+      // opcional: manejar error
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
+  void _applyLocalFilter() {
+    if (_searchTerm.isEmpty) {
+      _filteredClientes = List.from(_clientes);
+    } else {
+      _filteredClientes = _clientes.where((c) {
+        final nombre = (c['nombre'] as String).toLowerCase();
+        final telefono = (c['telefono'] as String).toLowerCase();
+        final negocio = (c['negocio'] as String? ?? '').toLowerCase();
+        return nombre.contains(_searchTerm) ||
+            telefono.contains(_searchTerm) ||
+            negocio.contains(_searchTerm);
+      }).toList();
     }
   }
 
@@ -120,6 +121,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         return Colors.orange;
       case 'atrasado':
         return Colors.red;
+      case 'completo':
+        return const Color.fromARGB(255, 23, 211, 29);
       default:
         return Colors.grey;
     }
@@ -135,6 +138,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         return 'Vence hoy';
       case 'atrasado':
         return 'Atrasado';
+      case 'completo':
+        return 'Completado';
       default:
         return '';
     }
@@ -159,7 +164,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       appBar: AppBar(title: const Text('Lista de Clientes')),
       body: Column(
         children: [
-          // Barra de búsqueda (sin cambios)
+          // Barra de búsqueda
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Container(
@@ -168,11 +173,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
               decoration: BoxDecoration(
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(24),
-                boxShadow: [
+                boxShadow: const [
                   BoxShadow(
                     color: Color.fromRGBO(0, 0, 0, 0.05),
                     blurRadius: 8,
-                    offset: const Offset(0, 4),
+                    offset: Offset(0, 4),
                   ),
                 ],
               ),
@@ -226,14 +231,15 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                       }
                       final c = _filteredClientes[index];
                       return InkWell(
-                        onTap: () {
-                          Navigator.push(
+                        onTap: () async {
+                          await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
                                   TarjetaClienteScreen(clienteId: c['id']),
                             ),
                           );
+                          await _fetchClientes();
                         },
                         child: Card(
                           margin: const EdgeInsets.only(bottom: 10),
@@ -249,8 +255,10 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                               children: [
                                 Text('Teléfono: ${c['telefono']}'),
                                 Text('Dirección: ${c['direccion']}'),
-                                // Aquí la línea de negocio + estado, ambos en el mismo Row
+                                // Nuevo Row con spaceBetween
                                 Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
                                       child: Text(
@@ -258,12 +266,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    // Este SizedBox fija la columna de estado
-                                    SizedBox(
-                                      width: 80,
-                                      child: _buildStatusChip(
-                                          c['estado_pago'] as String),
-                                    ),
+                                    _buildStatusChip(
+                                        c['estado_pago'] as String),
                                   ],
                                 ),
                               ],

@@ -12,6 +12,7 @@ class TarjetaClienteScreen extends StatefulWidget {
 class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   final supabase = Supabase.instance.client;
   Map<String, dynamic>? cliente;
+  List<Map<String, dynamic>> cronograma = [];
   List<int> cuotasPagadas = [];
   int? cuotaSeleccionada;
   bool _isLoading = true;
@@ -27,25 +28,39 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
   Future<void> _fetchData() async {
     try {
+      // 1) Cliente
       final c = await supabase
           .from('clientes')
           .select('*')
           .eq('id', widget.clienteId)
           .single();
+
+      // 2) Pagos ya hechos (para marcar casillas)
       final p = await supabase
           .from('pagos')
           .select('numero_cuota')
           .eq('cliente_id', widget.clienteId);
-
-      final cuotas =
+      final cuotasPagadas =
           (p as List).map<int>((e) => e['numero_cuota'] as int).toList();
 
+      // 3) Cronograma completo (monto y fecha por cuota)
+      final cr = await supabase
+          .from('cronograma')
+          .select('numero_cuota, monto_cuota, fecha_pagado')
+          .eq('cliente_id', widget.clienteId)
+          .order('numero_cuota');
+      final cronograma = List<Map<String, dynamic>>.from(cr as List);
+
+      // 4) Normaliza la fecha de primer pago
       final rawPrimer = DateTime.parse(c['fecha_primer_pago'] as String);
-      primerPagoDate = DateTime(rawPrimer.year, rawPrimer.month, rawPrimer.day);
+      final primerPagoDate =
+          DateTime(rawPrimer.year, rawPrimer.month, rawPrimer.day);
 
       setState(() {
         cliente = c;
-        cuotasPagadas = cuotas;
+        this.cuotasPagadas = cuotasPagadas;
+        this.cronograma = cronograma; // ← guarda aquí tu cronograma
+        this.primerPagoDate = primerPagoDate;
         cuotaSeleccionada = null;
         _isLoading = false;
       });
@@ -245,20 +260,17 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final nombre = cliente!['nombre'] as String;
     final negocio = cliente!['negocio'] as String?;
     final montoSolicitado = cliente!['monto_solicitado'] as num;
-    final cuotaDiaria = cliente!['cuota_diaria'] as num;
     final saldoPendiente = cliente!['saldo_pendiente'] as num;
     final plazoDias = cliente!['plazo_dias'] as int;
     final estadoRaw = cliente!['estado_pago'] as String;
     final diasAtraso = cliente!['dias_atraso'] as int;
 
-    // <<< LÓGICA PARA DISPLAY DE ÚLTIMA CUOTA >>>
-    final hoy = DateTime.now();
-    final today = DateTime(hoy.year, hoy.month, hoy.day);
-    final ultimoVenc = primerPagoDate.add(Duration(days: plazoDias - 1));
-    final esUltimoDia = today == ultimoVenc;
-    final displayCuota = (esUltimoDia && saldoPendiente < cuotaDiaria)
-        ? saldoPendiente
-        : cuotaDiaria;
+    // <<< LÓGICA PARA DISPLAY DE CUOTA >>>
+    final cuotaData = cronograma.firstWhere(
+      (r) => r['numero_cuota'] == cuotaSeleccionada,
+      orElse: () => {'monto_cuota': cliente!['cuota_diaria']},
+    );
+    final num displayCuota = cuotaData['monto_cuota'] as num;
     // <<< FIN >>>
 
     final label = _estadoLabel(estadoRaw, diasAtraso);
@@ -302,6 +314,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       color: Colors.red),
                   _InfoRow(
                     label: 'Cuota diaria:',
+                    // aquí sólo mostramos displayCuota, que ya usará el saldo en el último día
                     value: 'S/${displayCuota.toStringAsFixed(2)}',
                   ),
                   const SizedBox(height: 6),
