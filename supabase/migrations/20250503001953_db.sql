@@ -427,3 +427,89 @@ $$;
 CREATE TRIGGER trg_pagos_cierre
   AFTER INSERT ON public.pagos
   FOR EACH ROW EXECUTE PROCEDURE public._trigger_cierre_historial();
+
+-- ==========================================================
+-- 11. AFTER INSERT: registrar cada pago en historial_eventos
+-- ==========================================================
+DROP TRIGGER IF EXISTS trg_log_pago ON public.pagos;
+
+CREATE OR REPLACE FUNCTION public._trigger_log_pago()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  v_fecha_venc DATE;
+  v_atraso     INTEGER;
+BEGIN
+  -- Obtiene la fecha de vencimiento programada para esta cuota
+  SELECT fecha_venc
+    INTO v_fecha_venc
+    FROM public.cronograma
+   WHERE cliente_id   = NEW.cliente_id
+     AND numero_cuota = NEW.numero_cuota;
+
+  -- Calcula días de atraso (si la fecha real > programada)
+  v_atraso := GREATEST(
+    0,
+    (NEW.fecha_pago AT TIME ZONE 'America/Lima')::date - v_fecha_venc
+  );
+
+  -- Inserta un evento detallado en historial_eventos
+  INSERT INTO public.historial_eventos(
+    cliente_id,
+    tipo_evento,
+    descripcion
+  ) VALUES (
+    NEW.cliente_id,
+    'Pago cuota ' || NEW.numero_cuota,
+    format(
+      'Cuota %s pagada el %s (%s día%s de atraso)',
+      NEW.numero_cuota,
+      (NEW.fecha_pago AT TIME ZONE 'America/Lima')::date,
+      v_atraso,
+      CASE WHEN v_atraso = 1 THEN '' ELSE 's' END
+    )
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_log_pago
+  AFTER INSERT ON public.pagos
+  FOR EACH ROW
+  EXECUTE PROCEDURE public._trigger_log_pago();
+
+-- ==========================================================
+-- 12. VISTA: exponer el historial completo de un cliente
+-- ==========================================================
+CREATE OR REPLACE VIEW public.v_cliente_historial_completo AS
+WITH pagos_detalle AS (
+  SELECT
+    p.cliente_id,
+    MIN(cr.fecha_venc)                                AS fecha_inicio,      -- primer vencimiento
+    MAX(p.fecha_pago AT TIME ZONE 'America/Lima')     AS fecha_cierre_real, -- último pago real
+    SUM(p.monto_pagado)                               AS total_pagado,
+    MAX((p.fecha_pago AT TIME ZONE 'America/Lima')::date - cr.fecha_venc) 
+      AS dias_atraso_max
+  FROM public.pagos p
+  JOIN public.cronograma cr
+    ON p.cliente_id   = cr.cliente_id
+   AND p.numero_cuota = cr.numero_cuota
+  GROUP BY p.cliente_id
+),
+cliente_base AS (
+  SELECT
+    c.id                   AS cliente_id,
+    c.monto_solicitado,
+    c.plazo_dias           AS dias_totales
+  FROM public.clientes c
+)
+SELECT
+  cb.cliente_id,
+  pd.fecha_inicio,
+  pd.fecha_cierre_real,
+  cb.monto_solicitado,
+  pd.total_pagado,
+  cb.dias_totales,
+  GREATEST(pd.dias_atraso_max, 0) AS dias_atraso_max
+FROM cliente_base cb
+LEFT JOIN pagos_detalle pd ON pd.cliente_id = cb.cliente_id;

@@ -12,12 +12,11 @@ class TarjetaClienteScreen extends StatefulWidget {
 class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   final supabase = Supabase.instance.client;
   Map<String, dynamic>? cliente;
+  Map<String, dynamic>? historialCerrado;
   List<Map<String, dynamic>> cronograma = [];
   List<int> cuotasPagadas = [];
   int? cuotaSeleccionada;
   bool _isLoading = true;
-
-  // fecha normalizada del primer pago
   late DateTime primerPagoDate;
 
   @override
@@ -27,6 +26,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   Future<void> _fetchData() async {
+    setState(() => _isLoading = true);
     try {
       // 1) Cliente
       final c = await supabase
@@ -35,32 +35,40 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
           .eq('id', widget.clienteId)
           .single();
 
-      // 2) Pagos ya hechos (para marcar casillas)
+      // 2) Pagos ya hechos
       final p = await supabase
           .from('pagos')
           .select('numero_cuota')
           .eq('cliente_id', widget.clienteId);
-      final cuotasPagadas =
+      final pagadas =
           (p as List).map<int>((e) => e['numero_cuota'] as int).toList();
 
-      // 3) Cronograma completo (monto y fecha por cuota)
+      // 3) Cronograma completo
       final cr = await supabase
           .from('cronograma')
           .select('numero_cuota, monto_cuota, fecha_pagado')
           .eq('cliente_id', widget.clienteId)
           .order('numero_cuota');
-      final cronograma = List<Map<String, dynamic>>.from(cr as List);
+      final cron = List<Map<String, dynamic>>.from(cr as List);
 
-      // 4) Normaliza la fecha de primer pago
+      // 4) Historial de cierre (último registro)
+      final hist = await supabase
+          .from('v_cliente_historial_completo') // tu vista con el WITH/CTE
+          .select('fecha_inicio,fecha_cierre_real,monto_solicitado,'
+              'total_pagado,dias_totales,dias_atraso_max')
+          .eq('cliente_id', widget.clienteId)
+          .maybeSingle();
+
+      // 5) Normaliza la fecha de primer pago
       final rawPrimer = DateTime.parse(c['fecha_primer_pago'] as String);
-      final primerPagoDate =
-          DateTime(rawPrimer.year, rawPrimer.month, rawPrimer.day);
+      final primer = DateTime(rawPrimer.year, rawPrimer.month, rawPrimer.day);
 
       setState(() {
         cliente = c;
-        this.cuotasPagadas = cuotasPagadas;
-        this.cronograma = cronograma; // ← guarda aquí tu cronograma
-        this.primerPagoDate = primerPagoDate;
+        cuotasPagadas = pagadas;
+        cronograma = cron;
+        historialCerrado = hist;
+        primerPagoDate = primer;
         cuotaSeleccionada = null;
         _isLoading = false;
       });
@@ -75,12 +83,11 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   Future<void> _registrarPago() async {
     if (cuotaSeleccionada == null) return;
 
-    final num diario = cliente!['cuota_diaria'] as num;
-    final num ultima = cliente!['ultima_cuota'] as num;
-    final int plazoDias = cliente!['plazo_dias'] as int;
-
-    final bool esUltima = cuotaSeleccionada == plazoDias;
-    final num montoAPagar = esUltima ? ultima : diario;
+    final diario = cliente!['cuota_diaria'] as num;
+    final ultima = cliente!['ultima_cuota'] as num;
+    final plazoDias = cliente!['plazo_dias'] as int;
+    final esUltima = cuotaSeleccionada == plazoDias;
+    final montoAPagar = esUltima ? ultima : diario;
 
     try {
       await supabase.from('pagos').insert({
@@ -88,8 +95,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         'numero_cuota': cuotaSeleccionada,
         'monto_pagado': montoAPagar,
       });
-
-      // Luego recargamos para obtener el saldo actualizado
       await _fetchData();
     } catch (e) {
       if (mounted) {
@@ -100,50 +105,37 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   Future<void> _confirmarYRegistrarPago() async {
-    final num diario = cliente!['cuota_diaria'] as num;
-    final num ultima = cliente!['ultima_cuota'] as num;
-    final int plazoDias = cliente!['plazo_dias'] as int;
-    final bool esUltima = cuotaSeleccionada == plazoDias;
-    final num valorCuota = esUltima ? ultima : diario;
+    final diario = cliente!['cuota_diaria'] as num;
+    final ultima = cliente!['ultima_cuota'] as num;
+    final plazoDias = cliente!['plazo_dias'] as int;
+    final esUltima = cuotaSeleccionada == plazoDias;
+    final valorCuota = esUltima ? ultima : diario;
 
     String? obsIncidencia;
-
     final confirmado = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (_) => Dialog(
         backgroundColor: Colors.white,
         insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 1) Título en mayúsculas y centrado
-              Text(
-                'CONFIRMAR PAGO',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
+              const Text('CONFIRMAR PAGO',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              // 2) Texto justificiado
               Text(
-                '¿Registrar pago de la cuota '
-                '$cuotaSeleccionada \npor S/${valorCuota.toStringAsFixed(2)}?',
+                '¿Registrar pago de la cuota $cuotaSeleccionada \npor S/${valorCuota.toStringAsFixed(2)}?',
                 textAlign: TextAlign.justify,
                 style: const TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 16),
               ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxHeight: 150,
-                ),
+                constraints: const BoxConstraints(maxHeight: 150),
                 child: TextField(
                   minLines: 1,
                   maxLines: 5,
@@ -155,8 +147,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
@@ -165,29 +156,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                    ),
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text(
-                      'Cancelar',
-                      style: TextStyle(letterSpacing: 1),
-                    ),
-                  ),
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancelar')),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text(
-                      'Confirmar',
-                      style: TextStyle(letterSpacing: 1),
-                    ),
-                  ),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Confirmar')),
                 ],
               ),
             ],
@@ -207,30 +181,137 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     }
   }
 
+  void _mostrarHistorial() {
+    final h = historialCerrado!;
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.white, // fondo blanco
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ——— título ———
+              const Text(
+                'HISTORIAL DE PAGO',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              const Divider(thickness: 1), // línea divisoria
+              const SizedBox(height: 12),
+
+              // ——— contenido alineado ———
+              _buildHistRow(
+                  label: 'Inicio:', value: _formatFecha(h['fecha_inicio'])),
+              _buildHistRow(
+                  label: 'Fin:', value: _formatFecha(h['fecha_cierre_real'])),
+              _buildHistRow(
+                  label: 'Monto solicitado:',
+                  value: 'S/${h['monto_solicitado']}'),
+              _buildHistRow(
+                  label: 'Total pagado:', value: 'S/${h['total_pagado']}'),
+              _buildHistRow(
+                  label: 'Días totales:', value: '${h['dias_totales']}'),
+              _buildHistRow(
+                  label: 'Días de atraso:', value: '${h['dias_atraso_max']}'),
+
+              const SizedBox(height: 16),
+              const Divider(thickness: 1),
+              const SizedBox(height: 16),
+
+              // ——— botón Cerrar ———
+              SizedBox(
+                height: 40,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFF90CAF9), // tu azul claro
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'Cerrar',
+                    style: TextStyle(
+                      color: Colors.black, // texto negro
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Fila interna para alinear etiqueta + valor
+  Widget _buildHistRow({required String label, required String value}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+              softWrap: false, // no hace salto
+              maxLines: 1, // sólo una línea
+              overflow: TextOverflow.visible, // deja que se vea todo
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.w400),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatFecha(dynamic fecha) {
+    if (fecha == null) return '-';
+    final dt = DateTime.parse(fecha.toString());
+    return '${dt.day.toString().padLeft(2, '0')}/'
+        '${dt.month.toString().padLeft(2, '0')}/'
+        '${dt.year}';
+  }
+
   int get siguienteCuotaValida {
     if (cuotasPagadas.isEmpty) return 1;
     return cuotasPagadas.reduce((a, b) => a > b ? a : b) + 1;
   }
 
   String _estadoLabel(String raw, int diasAtraso) {
-    // 1) Pago próximo
-    if (raw == 'proximo') {
-      return 'Pago próximo';
+    switch (raw) {
+      case 'proximo':
+        return 'Pago próximo';
+      case 'completo':
+        return 'Completado';
+      case 'atrasado':
+        return '$diasAtraso día(s) de atraso';
+      case 'pendiente':
+        return 'Pago pendiente hoy';
+      default:
+        return 'Al día';
     }
-    // 2) Completado
-    if (raw == 'completo') {
-      return 'Completado';
-    }
-    // 3) Atrasado
-    if (raw == 'atrasado') {
-      return '$diasAtraso ${diasAtraso == 1 ? 'día' : 'días'} de atraso';
-    }
-    // 4) Pendiente hoy
-    if (raw == 'pendiente') {
-      return 'Pago pendiente hoy';
-    }
-    // 5) Al día
-    return 'Al día';
   }
 
   Color _estadoColor(String raw) {
@@ -243,7 +324,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         return Colors.red;
       case 'completo':
         return Colors.blue;
-      case 'al_dia':
       default:
         return Colors.green;
     }
@@ -265,14 +345,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final estadoRaw = cliente!['estado_pago'] as String;
     final diasAtraso = cliente!['dias_atraso'] as int;
 
-    // <<< LÓGICA PARA DISPLAY DE CUOTA >>>
+    // Calcular cuota a mostrar
     final cuotaData = cronograma.firstWhere(
       (r) => r['numero_cuota'] == cuotaSeleccionada,
       orElse: () => {'monto_cuota': cliente!['cuota_diaria']},
     );
     final num displayCuota = cuotaData['monto_cuota'] as num;
-    // <<< FIN >>>
-
     final label = _estadoLabel(estadoRaw, diasAtraso);
     final color = _estadoColor(estadoRaw);
 
@@ -302,23 +380,24 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _InfoRow(
-                      label: 'Monto prestado:',
-                      value: 'S/$montoSolicitado',
-                      color: Colors.green),
+                    label: 'Monto prestado:',
+                    value: 'S/$montoSolicitado',
+                    color: Colors.green,
+                  ),
                   _InfoRow(
-                      label: 'Saldo pendiente:',
-                      value: 'S/${saldoPendiente.toStringAsFixed(2)}',
-                      color: Colors.red),
+                    label: 'Saldo pendiente:',
+                    value: 'S/${saldoPendiente.toStringAsFixed(2)}',
+                    color: Colors.red,
+                  ),
                   _InfoRow(
                     label: 'Cuota diaria:',
-                    // aquí sólo mostramos displayCuota, que ya usará el saldo en el último día
                     value: 'S/${displayCuota.toStringAsFixed(2)}',
                   ),
                   const SizedBox(height: 6),
                   Text(label,
+                      textAlign: TextAlign.justify,
                       style:
                           TextStyle(color: color, fontWeight: FontWeight.bold)),
                 ],
@@ -346,7 +425,34 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 },
               ),
             ),
-            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () {
+                if (historialCerrado != null) {
+                  _mostrarHistorial();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No hay historial de cierre')),
+                  );
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.history, color: Colors.black54),
+                    SizedBox(width: 8),
+                    Text(
+                      'Ver Historial del Cliente',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -356,8 +462,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF90CAF9),
                   foregroundColor: Colors.black,
-                  elevation: 6,
-                  shadowColor: Colors.black26,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -373,10 +477,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 }
 
+/// Recuadro informativo para etiqueta + valor
 class _InfoRow extends StatelessWidget {
   final String label, value;
   final Color? color;
   const _InfoRow({required this.label, required this.value, this.color});
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -393,6 +499,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+/// Grid de botones para cada cuota
 class CuotasGrid extends StatelessWidget {
   final int dias;
   final List<int> cuotasPagadas;
@@ -427,10 +534,10 @@ class CuotasGrid extends StatelessWidget {
         mainAxisSpacing: 8,
         childAspectRatio: 1,
       ),
-      itemBuilder: (ctx, idx) {
+      itemBuilder: (_, idx) {
         final numCuota = idx + 1;
-        final rawDue = fechaInicio.add(Duration(days: idx));
-        final dueDate = DateTime(rawDue.year, rawDue.month, rawDue.day);
+        final dueDate = DateTime(
+            fechaInicio.year, fechaInicio.month, fechaInicio.day + idx);
 
         final estaPag = cuotasPagadas.contains(numCuota);
         final sel = cuotaSeleccionada == numCuota;
@@ -446,8 +553,8 @@ class CuotasGrid extends StatelessWidget {
           bg = Colors.orange[100]!;
           border = Colors.orange;
         } else if (esProx) {
-          bg = Colors.blue[100]!; // fondo azul suave
-          border = Colors.blue; // borde azul
+          bg = Colors.blue[100]!;
+          border = Colors.blue;
         } else if (vencida) {
           bg = Colors.red[100]!;
           border = Colors.red;
@@ -476,16 +583,11 @@ class CuotasGrid extends StatelessWidget {
                       if (esHoy)
                         const Text('HOY',
                             style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFFFFA726)))
-                      else if (esProx)
+                                fontSize: 10, fontWeight: FontWeight.w500)),
+                      if (esProx)
                         const Text('PRÓXIMO',
                             style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.blue, // cambia a azul
-                            ))
+                                fontSize: 10, fontWeight: FontWeight.w500)),
                     ],
                   ),
           ),
