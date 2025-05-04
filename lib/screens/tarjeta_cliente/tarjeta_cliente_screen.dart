@@ -28,44 +28,56 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
     try {
-      // 1) Cliente
-      final c = await supabase
+      // Disparo paralelo sin <…> en los select:
+      final Future cFuture = supabase
           .from('clientes')
           .select('*')
           .eq('id', widget.clienteId)
           .single();
 
-      // 2) Pagos ya hechos
-      final p = await supabase
+      final Future pFuture = supabase
           .from('pagos')
           .select('numero_cuota')
           .eq('cliente_id', widget.clienteId);
-      final pagadas =
-          (p as List).map<int>((e) => e['numero_cuota'] as int).toList();
 
-      // 3) Cronograma completo
-      final cr = await supabase
+      final Future crFuture = supabase
           .from('cronograma')
           .select('numero_cuota, monto_cuota, fecha_pagado')
           .eq('cliente_id', widget.clienteId)
           .order('numero_cuota');
-      final cron = List<Map<String, dynamic>>.from(cr as List);
 
-      // 4) Historial de cierre (último registro)
-      final hist = await supabase
-          .from('v_cliente_historial_completo') // tu vista con el WITH/CTE
+      final Future histFuture = supabase
+          .from('v_cliente_historial_completo')
           .select('fecha_inicio,fecha_cierre_real,monto_solicitado,'
               'total_pagado,dias_totales,dias_atraso_max')
           .eq('cliente_id', widget.clienteId)
           .maybeSingle();
 
-      // 5) Normaliza la fecha de primer pago
+      // Espero las 4 al mismo tiempo
+      final results =
+          await Future.wait([cFuture, pFuture, crFuture, histFuture]);
+
+      // Casteo cada uno:
+      final Map<String, dynamic> c =
+          (results[0] as Map).cast<String, dynamic>();
+      final List<Map<String, dynamic>> p = (results[1] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+      final List<Map<String, dynamic>> cron = (results[2] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+      final Map<String, dynamic>? hist = results[3] == null
+          ? null
+          : (results[3] as Map).cast<String, dynamic>();
+
+      // Normaliza la fecha de primer pago
       final rawPrimer = DateTime.parse(c['fecha_primer_pago'] as String);
       final primer = DateTime(rawPrimer.year, rawPrimer.month, rawPrimer.day);
 
+      // Un solo setState
       setState(() {
         cliente = c;
-        cuotasPagadas = pagadas;
+        cuotasPagadas = p.map((e) => e['numero_cuota'] as int).toList();
         cronograma = cron;
         historialCerrado = hist;
         primerPagoDate = primer;
@@ -425,31 +437,31 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 },
               ),
             ),
-            GestureDetector(
-              onTap: () {
-                if (historialCerrado != null) {
-                  _mostrarHistorial();
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('No hay historial de cierre')),
-                  );
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.history, color: Colors.black54),
-                    SizedBox(width: 8),
-                    Text(
-                      'Ver Historial del Cliente',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
+            // ——— Ver Historial ———
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: GestureDetector(
+                // Solo invoca _mostrarHistorial si está COMPLETO
+                onTap: cliente!['estado_pago'] == 'completo'
+                    ? _mostrarHistorial
+                    : null,
+                child: Opacity(
+                  // Atenúa al 50% cuando NO está completo
+                  opacity: cliente!['estado_pago'] == 'completo' ? 1.0 : 0.5,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.history, color: Colors.black54),
+                      SizedBox(width: 8),
+                      Text(
+                        'Ver Historial del Cliente',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -349,7 +349,7 @@ ALTER TABLE public.cronograma DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pagos      DISABLE ROW LEVEL SECURITY;
 
 -- ==========================================================
--- 9. FUNCIÓN: crear_historial_cerrado
+-- 9. FUNCIÓN: crear_historial_cerrado 
 -- ==========================================================
 CREATE OR REPLACE FUNCTION public.crear_historial_cerrado(p_cliente_id BIGINT)
   RETURNS void LANGUAGE plpgsql AS $$
@@ -360,24 +360,41 @@ DECLARE
   v_count_incidencias INTEGER;
   v_score             INTEGER;
 BEGIN
+  -- 1) Datos básicos del cliente
   SELECT * INTO v_cli
     FROM public.clientes
    WHERE id = p_cliente_id;
 
+  -- 2) Suma de todos los pagos
   SELECT COALESCE(SUM(monto_pagado), 0)
     INTO v_total_pagado
     FROM public.pagos
    WHERE cliente_id = p_cliente_id;
 
-  SELECT MAX(dias_atraso) INTO v_max_atraso
-    FROM public.clientes
-   WHERE id = p_cliente_id;
+  -- 3) Cálculo directo del atraso máximo
+  SELECT
+    COALESCE(
+      MAX(
+        (
+          (p.fecha_pago AT TIME ZONE 'America/Lima')::date
+          - cr.fecha_venc
+        )
+      ), 0
+    )
+  INTO v_max_atraso
+  FROM public.pagos p
+  JOIN public.cronograma cr
+    ON p.cliente_id   = cr.cliente_id
+   AND p.numero_cuota = cr.numero_cuota
+  WHERE p.cliente_id = p_cliente_id;
 
+  -- 4) Conteo de incidencias en historial_eventos
   SELECT COUNT(*) INTO v_count_incidencias
     FROM public.historial_eventos
    WHERE cliente_id = p_cliente_id
      AND tipo_evento = 'Incidencia';
 
+  -- 5) Cálculo de la calificación
   v_score := GREATEST(
     0,
     LEAST(
@@ -386,6 +403,7 @@ BEGIN
     )
   );
 
+  -- 6) Inserción en cliente_historial
   INSERT INTO public.cliente_historial(
     cliente_id, fecha_cierre, monto_solicitado, total_pagado,
     dias_totales, dias_atraso_max, incidencias,
@@ -403,6 +421,7 @@ BEGIN
   );
 END;
 $$;
+
 
 -- ==========================================================
 -- 10. TRIGGER: al insertar la última cuota en pagos
