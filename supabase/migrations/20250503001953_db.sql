@@ -168,24 +168,33 @@ CREATE OR REPLACE FUNCTION public._trigger_generar_cronograma()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   v_hoy    DATE := (now() AT TIME ZONE 'America/Lima')::date;
+  v_fp     DATE := (NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date;
   v_estado TEXT;
 BEGIN
+  -- 1) Generar cronograma
   PERFORM public._crear_cronograma_aux(NEW.id);
 
+  -- 2) Inicializar saldo
   UPDATE public.clientes
      SET saldo_pendiente = NEW.total_pagar
    WHERE id = NEW.id;
 
-  SELECT CASE
-    WHEN EXISTS (
+  -- 3) Determinar estado inicial
+  IF v_fp > v_hoy THEN
+    -- Aún no toca la primera cuota
+    v_estado := 'proximo';
+  ELSIF EXISTS (
       SELECT 1 FROM public.cronograma
        WHERE cliente_id = NEW.id
          AND fecha_venc = v_hoy
          AND fecha_pagado IS NULL
-    ) THEN 'pendiente'
-    ELSE 'al_dia'
-  END INTO v_estado;
+    ) THEN
+    v_estado := 'pendiente';
+  ELSE
+    v_estado := 'al_dia';
+  END IF;
 
+  -- 4) Guardar estado en la tabla
   UPDATE public.clientes
      SET estado_pago = v_estado
    WHERE id = NEW.id;
@@ -193,10 +202,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+DROP TRIGGER IF EXISTS trg_clientes_ai ON public.clientes;
 CREATE TRIGGER trg_clientes_ai
   AFTER INSERT ON public.clientes
   FOR EACH ROW EXECUTE PROCEDURE public._trigger_generar_cronograma();
-
 
 -- ==========================================================
 -- 6. AFTER UPDATE: regenerar cronograma si cambian términos
@@ -226,8 +235,9 @@ CREATE TRIGGER trg_clientes_au
 CREATE OR REPLACE FUNCTION public._trigger_actualizar_estado()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
-  cid             BIGINT := COALESCE(NEW.cliente_id, OLD.cliente_id);
-  v_hoy           DATE   := (now() AT TIME ZONE 'America/Lima')::date;
+  cid             BIGINT   := COALESCE(NEW.cliente_id, OLD.cliente_id);
+  v_hoy           DATE     := (now() AT TIME ZONE 'America/Lima')::date;
+  v_fp            DATE;
   cuotas_vencidas INTEGER;
   cuota_hoy_pend  BOOLEAN;
   todas_pagadas   BOOLEAN;
@@ -235,7 +245,7 @@ DECLARE
   total_pagado    NUMERIC;
   est_final       TEXT;
 BEGIN
-  -- Ajustar fecha_pagado en cronograma
+  -- 1) Sincronizar fecha_pagado en cronograma
   IF TG_OP = 'INSERT' THEN
     UPDATE public.cronograma
        SET fecha_pagado = (NEW.fecha_pago AT TIME ZONE 'America/Lima')::date
@@ -248,14 +258,19 @@ BEGIN
        AND numero_cuota = OLD.numero_cuota;
   END IF;
 
-  -- Calcular atrasos
+  -- 2) Fecha del primer vencimiento
+  SELECT (fecha_primer_pago AT TIME ZONE 'America/Lima')::date
+    INTO v_fp
+    FROM public.clientes
+   WHERE id = cid;
+
+  -- 3) Calcular atrasos y pendientes
   SELECT COUNT(*) INTO cuotas_vencidas
     FROM public.cronograma
    WHERE cliente_id = cid
      AND fecha_venc < v_hoy
      AND fecha_pagado IS NULL;
 
-  -- ¿Pendiente hoy?
   SELECT EXISTS(
     SELECT 1 FROM public.cronograma
      WHERE cliente_id = cid
@@ -263,33 +278,34 @@ BEGIN
        AND fecha_pagado IS NULL
   ) INTO cuota_hoy_pend;
 
-  -- ¿Todas pagadas?
   SELECT NOT EXISTS(
     SELECT 1 FROM public.cronograma
      WHERE cliente_id = cid
        AND fecha_pagado IS NULL
   ) INTO todas_pagadas;
 
-  -- Última cuota pagada
   SELECT COALESCE(MAX(numero_cuota),0) INTO ultima_pagada
     FROM public.cronograma
    WHERE cliente_id = cid
      AND fecha_pagado IS NOT NULL;
 
-  -- Total pagado
   SELECT COALESCE(SUM(monto_pagado),0) INTO total_pagado
     FROM public.pagos
    WHERE cliente_id = cid;
 
-  -- Determinar estado final
-  est_final := CASE
-    WHEN todas_pagadas        THEN 'completo'
-    WHEN cuotas_vencidas > 0  THEN 'atrasado'
-    WHEN cuota_hoy_pend       THEN 'pendiente'
-    ELSE 'al_dia'
-  END;
+  -- 4) Determinar estado final, incluyendo 'proximo'
+  IF v_fp > v_hoy THEN
+    est_final := 'proximo';
+  ELSE
+    est_final := CASE
+      WHEN todas_pagadas        THEN 'completo'
+      WHEN cuotas_vencidas > 0  THEN 'atrasado'
+      WHEN cuota_hoy_pend       THEN 'pendiente'
+      ELSE 'al_dia'
+    END;
+  END IF;
 
-  -- Actualizar cliente
+  -- 5) Actualizar el cliente
   UPDATE public.clientes
      SET estado_pago     = est_final,
          dias_atraso     = cuotas_vencidas,
@@ -300,6 +316,7 @@ BEGIN
   RETURN COALESCE(NEW,OLD);
 END;
 $$;
+DROP TRIGGER IF EXISTS trg_pagos_aiud ON public.pagos;
 CREATE TRIGGER trg_pagos_aiud
   AFTER INSERT OR DELETE ON public.pagos
   FOR EACH ROW EXECUTE PROCEDURE public._trigger_actualizar_estado();

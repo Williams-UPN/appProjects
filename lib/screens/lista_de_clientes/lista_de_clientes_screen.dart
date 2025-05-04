@@ -104,7 +104,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         _applyLocalFilter();
       }
     } catch (_) {
-      // Manejo opcional de error
+      // opcional
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
@@ -112,6 +112,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
 
   Color _colorParaEstado(String estado) {
     switch (estado) {
+      case 'proximo':
+        return Colors.blue;
       case 'al_dia':
         return Colors.green;
       case 'pendiente':
@@ -125,6 +127,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
 
   String _labelParaEstado(String estado) {
     switch (estado) {
+      case 'proximo':
+        return 'Próximo';
       case 'al_dia':
         return 'Al día';
       case 'pendiente':
@@ -155,21 +159,20 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       appBar: AppBar(title: const Text('Lista de Clientes')),
       body: Column(
         children: [
-          // Barra de búsqueda
+          // Barra de búsqueda (sin cambios)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Container(
-              height: 48, // campo un poco más alto
+              height: 48,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: Colors.grey
-                    .shade100, // off-white suave :contentReference[oaicite:0]{index=0}
-                borderRadius: BorderRadius.circular(24), // forma “pill”
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withAlpha((0.05 * 255).round()),
+                    color: Color.fromRGBO(0, 0, 0, 0.05),
                     blurRadius: 8,
-                    offset: Offset(0, 4),
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
@@ -183,7 +186,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                       decoration: const InputDecoration(
                         hintText: 'Buscar cliente…',
                         hintStyle: TextStyle(fontSize: 14, color: Colors.grey),
-                        border: InputBorder.none, // sin borde interno
+                        border: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
                       ),
@@ -192,7 +195,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                   ),
                   if (_searchTerm.isNotEmpty)
                     GestureDetector(
-                      onTap: () => _searchCtrl.clear(),
+                      onTap: () {
+                        _searchCtrl.clear();
+                        setState(() => _searchTerm = '');
+                        _applyLocalFilter();
+                      },
                       child:
                           const Icon(Icons.close, size: 20, color: Colors.grey),
                     ),
@@ -200,6 +207,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
               ),
             ),
           ),
+
+          // Lista de tarjetas
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -232,18 +241,16 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                           child: ListTile(
                             title: Text(
                               c['nombre'] as String,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('Teléfono: ${c['telefono']}'),
                                 Text('Dirección: ${c['direccion']}'),
+                                // Aquí la línea de negocio + estado, ambos en el mismo Row
                                 Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
                                       child: Text(
@@ -251,8 +258,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    _buildStatusChip(
-                                      c['estado_pago'] as String,
+                                    // Este SizedBox fija la columna de estado
+                                    SizedBox(
+                                      width: 80,
+                                      child: _buildStatusChip(
+                                          c['estado_pago'] as String),
                                     ),
                                   ],
                                 ),

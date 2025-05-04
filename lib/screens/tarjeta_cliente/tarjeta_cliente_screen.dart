@@ -122,42 +122,39 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   String _estadoLabel(String raw, int diasAtraso) {
-    final hoy = DateTime.now();
-    final today = DateTime(hoy.year, hoy.month, hoy.day);
-    if (raw == 'al_dia' && primerPagoDate.isAfter(today)) {
+    // 1) Pago próximo
+    if (raw == 'proximo') {
       return 'Pago próximo';
     }
-    switch (raw) {
-      case 'pendiente':
-        return 'Pago pendiente hoy';
-      case 'atrasado':
-        return '$diasAtraso ${diasAtraso == 1 ? 'día' : 'días'} de atraso';
-      case 'al_dia':
-        return 'Al día';
-      case 'completo':
-        return 'Completado';
-      default:
-        return raw;
+    // 2) Completado
+    if (raw == 'completo') {
+      return 'Completado';
     }
+    // 3) Atrasado
+    if (raw == 'atrasado') {
+      return '$diasAtraso ${diasAtraso == 1 ? 'día' : 'días'} de atraso';
+    }
+    // 4) Pendiente hoy
+    if (raw == 'pendiente') {
+      return 'Pago pendiente hoy';
+    }
+    // 5) Al día
+    return 'Al día';
   }
 
   Color _estadoColor(String raw) {
-    final hoy = DateTime.now();
-    final today = DateTime(hoy.year, hoy.month, hoy.day);
-    if (raw == 'al_dia' && primerPagoDate.isAfter(today)) {
-      return Colors.green;
-    }
     switch (raw) {
+      case 'proximo':
+        return Colors.blue;
       case 'pendiente':
         return Colors.orange;
       case 'atrasado':
         return Colors.red;
-      case 'al_dia':
-        return Colors.green;
       case 'completo':
         return Colors.blue;
+      case 'al_dia':
       default:
-        return Colors.black;
+        return Colors.green;
     }
   }
 
@@ -178,7 +175,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final estadoRaw = cliente!['estado_pago'] as String;
     final diasAtraso = cliente!['dias_atraso'] as int;
 
-    // <<< NUEVA LÓGICA PARA DISPLAY DE ÚLTIMA CUOTA >>>
+    // <<< LÓGICA PARA DISPLAY DE ÚLTIMA CUOTA >>>
     final hoy = DateTime.now();
     final today = DateTime(hoy.year, hoy.month, hoy.day);
     final ultimoVenc = primerPagoDate.add(Duration(days: plazoDias - 1));
@@ -186,7 +183,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final displayCuota = (esUltimoDia && saldoPendiente < cuotaDiaria)
         ? saldoPendiente
         : cuotaDiaria;
-    // <<< FIN CAMBIO >>>
+    // <<< FIN >>>
 
     final label = _estadoLabel(estadoRaw, diasAtraso);
     final color = _estadoColor(estadoRaw);
@@ -227,7 +224,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       label: 'Saldo pendiente:',
                       value: 'S/${saldoPendiente.toStringAsFixed(2)}',
                       color: Colors.red),
-                  // Aquí mostramos displayCuota en lugar de cuotaDiaria:
                   _InfoRow(
                     label: 'Cuota diaria:',
                     value: 'S/${displayCuota.toStringAsFixed(2)}',
@@ -361,8 +357,8 @@ class CuotasGrid extends StatelessWidget {
           bg = Colors.orange[100]!;
           border = Colors.orange;
         } else if (esProx) {
-          bg = Colors.green[100]!;
-          border = Colors.green;
+          bg = Colors.blue[100]!; // fondo azul suave
+          border = Colors.blue; // borde azul
         } else if (vencida) {
           bg = Colors.red[100]!;
           border = Colors.red;
@@ -397,9 +393,10 @@ class CuotasGrid extends StatelessWidget {
                       else if (esProx)
                         const Text('PRÓXIMO',
                             style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.green)),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.blue, // cambia a azul
+                            ))
                     ],
                   ),
           ),
