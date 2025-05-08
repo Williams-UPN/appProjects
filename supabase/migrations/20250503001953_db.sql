@@ -532,3 +532,69 @@ SELECT
   GREATEST(pd.dias_atraso_max, 0) AS dias_atraso_max
 FROM cliente_base cb
 LEFT JOIN pagos_detalle pd ON pd.cliente_id = cb.cliente_id;
+
+-- ==========================================================
+-- 13. VISTA “AL VUELO” CORREGIDA: cuenta sólo cuotas vencidas y sin pagar
+-- ==========================================================
+
+DROP VIEW IF EXISTS public.v_clientes_con_estado;
+CREATE VIEW public.v_clientes_con_estado AS
+WITH mora AS (
+  SELECT
+    cr.cliente_id,
+    -- Sólo las cuotas vencidas y sin pagar:
+    COUNT(*) FILTER (
+      WHERE cr.fecha_venc < (now() AT TIME ZONE 'America/Lima')::date
+        AND cr.fecha_pagado IS NULL
+    )                                  AS cuotas_vencidas,
+    -- ¿Hay una cuota pendiente HOY?
+    EXISTS (
+      SELECT 1
+      FROM public.cronograma c2
+      WHERE c2.cliente_id   = cr.cliente_id
+        AND c2.fecha_venc   = (now() AT TIME ZONE 'America/Lima')::date
+        AND c2.fecha_pagado IS NULL
+    )                                  AS cuota_hoy_pendiente,
+    -- ¿Ya pagó todas?
+    NOT EXISTS (
+      SELECT 1
+      FROM public.cronograma c3
+      WHERE c3.cliente_id   = cr.cliente_id
+        AND c3.fecha_pagado IS NULL
+    )                                  AS todas_pagadas
+  FROM public.cronograma cr
+  GROUP BY cr.cliente_id
+)
+SELECT
+  cli.id,
+  cli.nombre,
+  cli.telefono,
+  cli.direccion,
+  cli.negocio,
+  cli.monto_solicitado,
+  cli.plazo_dias,
+  cli.fecha_creacion,
+  cli.fecha_primer_pago,
+  cli.fecha_final,
+  cli.total_pagar,
+  cli.cuota_diaria,
+  cli.ultima_cuota,
+  cli.saldo_pendiente,
+  -- Renombrado para que el front use exactamente este nombre:
+  m.cuotas_vencidas   AS dias_reales,
+  CASE
+    -- 1) Primer pago en el futuro → “próximo”
+    WHEN (cli.fecha_primer_pago AT TIME ZONE 'America/Lima')::date
+         > (now() AT TIME ZONE 'America/Lima')::date
+      THEN 'proximo'
+    -- 2) Todas las cuotas ya pagadas → “completo”
+    WHEN m.todas_pagadas       THEN 'completo'
+    -- 3) Vence hoy → “pendiente”
+    WHEN m.cuota_hoy_pendiente THEN 'pendiente'
+    -- 4) Ya hay cuotas vencidas → “atrasado”
+    WHEN m.cuotas_vencidas > 0 THEN 'atrasado'
+    -- 5) Si no aplica ninguno → “al_dia”
+    ELSE 'al_dia'
+  END                   AS estado_real
+FROM public.clientes AS cli
+LEFT JOIN mora m ON m.cliente_id = cli.id;

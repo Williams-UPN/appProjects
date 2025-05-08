@@ -30,7 +30,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     try {
       // Disparo paralelo sin <…> en los select:
       final Future cFuture = supabase
-          .from('clientes')
+          .from('v_clientes_con_estado')
           .select('*')
           .eq('id', widget.clienteId)
           .single();
@@ -335,7 +335,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
       case 'atrasado':
         return Colors.red;
       case 'completo':
-        return Colors.blue;
+        return Colors.green;
       default:
         return Colors.green;
     }
@@ -354,8 +354,8 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final montoSolicitado = cliente!['monto_solicitado'] as num;
     final saldoPendiente = cliente!['saldo_pendiente'] as num;
     final plazoDias = cliente!['plazo_dias'] as int;
-    final estadoRaw = cliente!['estado_pago'] as String;
-    final diasAtraso = cliente!['dias_atraso'] as int;
+    final estadoRaw = cliente!['estado_real'] as String;
+    final diasAtraso = cliente!['dias_reales'] as int;
 
     // Calcular cuota a mostrar
     final cuotaData = cronograma.firstWhere(

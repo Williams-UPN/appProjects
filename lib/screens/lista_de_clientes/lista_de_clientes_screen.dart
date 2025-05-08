@@ -53,8 +53,9 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     setState(() => _isLoading = true);
     try {
       final data = await supabase
-          .from('clientes')
-          .select('id, nombre, telefono, direccion, negocio, estado_pago')
+          .from('v_clientes_con_estado')
+          .select(
+              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales')
           .order('id', ascending: true)
           .range(0, _pageSize - 1);
       if (!mounted) return;
@@ -80,8 +81,9 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     final to = from + _pageSize - 1;
     try {
       final data = await supabase
-          .from('clientes')
-          .select('id, nombre, telefono, direccion, negocio, estado_pago')
+          .from('v_clientes_con_estado')
+          .select(
+              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales')
           .order('id', ascending: true)
           .range(from, to);
       final more = List<Map<String, dynamic>>.from(data);
@@ -89,7 +91,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         _clientes.addAll(more);
         _applyLocalFilter();
       }
-    } catch (_) {
+    } catch (e) {
       // opcional: manejar error
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
@@ -267,7 +269,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                       ),
                                     ),
                                     _buildStatusChip(
-                                        c['estado_pago'] as String),
+                                        c['estado_real'] as String),
                                   ],
                                 ),
                               ],
