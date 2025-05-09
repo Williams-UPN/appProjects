@@ -9,12 +9,13 @@ import 'package:flutter/services.dart';
 import 'repositories/cliente_repository.dart';
 import 'viewmodels/cliente_nuevo_viewmodel.dart';
 import 'viewmodels/lista_clientes_viewmodel.dart';
+import 'viewmodels/clientes_pendientes_viewmodel.dart'; // ← IMPORTA AQUÍ
 
 import 'screens/splash.dart';
 import 'screens/main_menu/main_menu_screen.dart';
 import 'screens/lista_de_clientes/lista_de_clientes_screen.dart';
 import 'screens/cliente_nuevo/cliente_nuevo_screen.dart';
-import 'screens/cliente_pendiente/cliente_pendiente_screen.dart';
+import 'screens/cliente_pendiente/clientes_pendientes_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,20 +38,26 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        // 1) Proveemos el repositorio centralizado
+        // Proveedor del repositorio
         Provider<ClienteRepository>(
           create: (_) => ClienteRepository(),
         ),
 
-        // 2) Inyectamos el repo en el ViewModel de "Nuevo Cliente"
+        // ViewModel para "Nuevo Cliente"
         ChangeNotifierProvider<ClienteNuevoViewModel>(
           create: (ctx) => ClienteNuevoViewModel(ctx.read<ClienteRepository>()),
         ),
 
-        // 3) Inyectamos el repo en el ViewModel de "Listado de Clientes"
+        // ViewModel para "Listado de Clientes"
         ChangeNotifierProvider<ListaClientesViewModel>(
           create: (ctx) =>
               ListaClientesViewModel(ctx.read<ClienteRepository>()),
+        ),
+
+        // ViewModel para "Clientes Pendientes" ← AÑADE ESTE
+        ChangeNotifierProvider<ClientesPendientesViewModel>(
+          create: (ctx) =>
+              ClientesPendientesViewModel(ctx.read<ClienteRepository>()),
         ),
       ],
       child: const MyApp(),

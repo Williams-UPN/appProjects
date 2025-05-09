@@ -1,20 +1,21 @@
-// lib/screens/lista_de_clientes/lista_de_clientes_screen.dart
+// lib/screens/cliente_pendiente/clientes_pendientes_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/cliente_read.dart';
-import '../../viewmodels/lista_clientes_viewmodel.dart';
+import '../../viewmodels/clientes_pendientes_viewmodel.dart';
 import '../tarjeta_cliente/tarjeta_cliente_screen.dart';
 
-class ListaDeClientesScreen extends StatefulWidget {
-  const ListaDeClientesScreen({super.key});
+class ClientesPendientesScreen extends StatefulWidget {
+  const ClientesPendientesScreen({super.key});
 
   @override
-  State<ListaDeClientesScreen> createState() => _ListaDeClientesScreenState();
+  State<ClientesPendientesScreen> createState() =>
+      _ClientesPendientesScreenState();
 }
 
-class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
+class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
   late final ScrollController _scrollController;
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchTerm = '';
@@ -22,14 +23,25 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
   @override
   void initState() {
     super.initState();
+    // Carga inicial tras montar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ClientesPendientesViewModel>().loadInitial();
+    });
+    // Listener de scroll para paginación
     _scrollController = ScrollController()
       ..addListener(() {
-        final vm = context.read<ListaClientesViewModel>();
+        final vm = context.read<ClientesPendientesViewModel>();
         if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 100) {
           vm.loadMore();
         }
       });
+    // Listener de búsqueda
+    _searchCtrl.addListener(() {
+      final v = _searchCtrl.text.toLowerCase();
+      _searchTerm = v;
+      context.read<ClientesPendientesViewModel>().updateSearch(v);
+    });
   }
 
   @override
@@ -59,6 +71,22 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         );
       }),
     );
+  }
+
+  Color _colorParaScore(int score) {
+    if (score >= 90) return Colors.green;
+    if (score >= 75) return Colors.lightGreen;
+    if (score >= 50) return Colors.orange;
+    if (score >= 25) return Colors.deepOrange;
+    return Colors.red;
+  }
+
+  String _labelParaScore(int score) {
+    if (score >= 90) return 'Excelente';
+    if (score >= 75) return 'Buen pagador';
+    if (score >= 50) return 'Riesgo medio';
+    if (score >= 25) return 'Riesgo alto';
+    return 'Incumplidor';
   }
 
   Color _colorParaEstado(String estado) {
@@ -108,27 +136,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     );
   }
 
-  String _labelParaScore(int score) {
-    if (score >= 90) return 'Excelente';
-    if (score >= 75) return 'Buen pagador';
-    if (score >= 50) return 'Riesgo medio';
-    if (score >= 25) return 'Riesgo alto';
-    return 'Incumplidor';
-  }
-
-  Color _colorParaScore(int score) {
-    if (score >= 90) return Colors.green;
-    if (score >= 75) return Colors.lightGreen;
-    if (score >= 50) return Colors.orange;
-    if (score >= 25) return Colors.deepOrange;
-    return Colors.red;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Lista de Clientes')),
-      body: Consumer<ListaClientesViewModel>(
+      appBar: AppBar(title: const Text('Clientes Atrasados')),
+      body: Consumer<ClientesPendientesViewModel>(
         builder: (context, vm, _) {
           if (vm.isLoading) {
             return const Center(child: CircularProgressIndicator());
@@ -167,14 +179,10 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                     fillColor: Colors.grey.shade100,
                     contentPadding: const EdgeInsets.symmetric(vertical: 0),
                   ),
-                  onChanged: (v) {
-                    _searchTerm = v.toLowerCase();
-                    vm.updateSearch(_searchTerm);
-                  },
                 ),
               ),
 
-              // Listado con paginación
+              // Lista paginada
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
@@ -192,14 +200,14 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                     final score = c.scoreActual;
                     final isNew = !c.hasHistory;
                     final stars = isNew ? 5 : _scoreToStars(score);
-                    final label = isNew ? '¡nuevo!' : _labelParaScore(score);
-                    final categoryColor =
+                    final scoreLabel =
+                        isNew ? '¡nuevo!' : _labelParaScore(score);
+                    final scoreColor =
                         isNew ? Colors.grey : _colorParaScore(score);
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      elevation: 4,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      elevation: 2,
                       child: ListTile(
                         onTap: () async {
                           await Navigator.push(
@@ -227,19 +235,19 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // Panel izquierdo: datos
+                              // IZQUIERDA: datos
                               Expanded(
                                 flex: 2,
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Teléfono: ${c.telefono}'),
-                                    Text('Dirección: ${c.direccion}'),
-                                    Text('Negocio: ${c.negocio}'),
+                                    Text('Tel: ${c.telefono}'),
+                                    Text('Dir: ${c.direccion}'),
+                                    Text('Neg: ${c.negocio}'),
                                   ],
                                 ),
                               ),
-                              // Panel derecho: etiqueta + chip
+                              // DERECHA: score + estado + días atraso
                               Expanded(
                                 flex: 1,
                                 child: Column(
@@ -248,11 +256,16 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      label,
+                                      scoreLabel,
                                       style: TextStyle(
-                                          color: categoryColor, fontSize: 12),
+                                          color: scoreColor, fontSize: 12),
                                     ),
                                     _buildStatusChip(c.estadoReal),
+                                    Text(
+                                      '${c.diasReales} días atraso',
+                                      style: const TextStyle(
+                                          fontSize: 12, color: Colors.red),
+                                    ),
                                   ],
                                 ),
                               ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'cliente_nuevo/cliente_nuevo_screen.dart';
 import 'lista_de_clientes/lista_de_clientes_screen.dart';
-import 'cliente_pendiente/cliente_pendiente_screen.dart';
+import 'cliente_pendiente/clientes_pendientes_screen.dart';
 
 class MainMenuScreen extends StatelessWidget {
   const MainMenuScreen({super.key});
