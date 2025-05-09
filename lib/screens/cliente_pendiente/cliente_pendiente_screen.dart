@@ -56,16 +56,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-            '''
-id,
-nombre,
-telefono,
-direccion,
-negocio,
-estado_real,
-dias_reales,
-score_actual
-''',
+            '''id,nombre,telefono,direccion,negocio,estado_real,dias_reales,score_actual''',
           )
           .gt('dias_reales', 0) // solo atrasados
           .order('dias_reales') // ordenar por días de atraso ascendente
@@ -277,10 +268,19 @@ score_actual
                         );
                       }
                       final c = _filteredClientes[index];
+
                       final score = (c['score_actual'] as int?) ?? 0;
-                      final stars = _scoreToStars(score);
-                      final categoryLabel = _labelParaScore(score);
-                      final categoryColor = _colorParaScore(score);
+                      final hasHistory = (c['has_history'] as bool?) ?? false;
+                      // “Nuevo” solo si NO tiene historial
+                      final isNew = !hasHistory;
+                      // Estrellas: 5 si es nuevo, si no según score
+                      final stars = isNew ? 5 : _scoreToStars(score);
+                      // Etiqueta: “¡nuevo!” o la habitual según puntuación
+                      final categoryLabel =
+                          isNew ? '¡nuevo!' : _labelParaScore(score);
+                      // Color: gris para nuevo, si no según puntuación
+                      final categoryColor =
+                          isNew ? Colors.grey : _colorParaScore(score);
 
                       return InkWell(
                         onTap: () async {

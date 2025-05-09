@@ -55,7 +55,9 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales, score_actual')
+            'id, nombre, telefono, direccion, negocio, estado_real, '
+            'dias_reales, score_actual, has_history',
+          )
           .order('id', ascending: true)
           .range(0, _pageSize - 1);
       if (!mounted) return;
@@ -82,7 +84,9 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales, score_actual')
+            'id, nombre, telefono, direccion, negocio, estado_real, '
+            'dias_reales, score_actual, has_history',
+          )
           .order('id', ascending: true)
           .range(from, to);
       final more = List<Map<String, dynamic>>.from(data);
@@ -270,9 +274,22 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                       }
                       final c = _filteredClientes[index];
                       final score = (c['score_actual'] as int?) ?? 0;
-                      final stars = _scoreToStars(score);
-                      final categoryLabel = _labelParaScore(score);
-                      final categoryColor = _colorParaScore(score);
+                      final hasHistory = (c['has_history'] as bool?) ?? false;
+                      final estado = c['estado_real'] as String;
+
+                      // “Nuevo” solo si no tiene historial
+                      final isNew = !hasHistory;
+
+                      // Estrellas: 5 si es nuevo, si no según score
+                      final stars = isNew ? 5 : _scoreToStars(score);
+
+                      // Etiqueta: “¡nuevo!” o la habitual según score
+                      final categoryLabel =
+                          isNew ? '¡nuevo!' : _labelParaScore(score);
+
+                      // Color: gris para nuevo, si no según score
+                      final categoryColor =
+                          isNew ? Colors.grey : _colorParaScore(score);
 
                       return InkWell(
                         onTap: () async {
@@ -302,10 +319,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                               ],
                             ),
                             subtitle: IntrinsicHeight(
-                              // <<< envuelve aquí
                               child: Row(
-                                crossAxisAlignment: CrossAxisAlignment
-                                    .stretch, // estira a la altura intrínseca
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   // Panel izquierdo
                                   Expanded(
@@ -332,11 +347,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                         Text(
                                           categoryLabel,
                                           style: TextStyle(
-                                              color: categoryColor,
-                                              fontSize: 12),
+                                            color: categoryColor,
+                                            fontSize: 12,
+                                          ),
                                         ),
-                                        _buildStatusChip(
-                                            c['estado_real'] as String),
+                                        _buildStatusChip(estado),
                                       ],
                                     ),
                                   ),
