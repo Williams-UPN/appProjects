@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'cliente_nuevo/cliente_nuevo_screen.dart';
 import 'lista_de_clientes/lista_de_clientes_screen.dart';
+import 'cliente_pendiente/cliente_pendiente_screen.dart';
 
 class MainMenuScreen extends StatelessWidget {
   const MainMenuScreen({super.key});
@@ -56,7 +57,14 @@ class MainMenuScreen extends StatelessWidget {
                 ),
               );
             }),
-            customButton('Clientes Pendientes', () {}),
+            customButton('Clientes Pendientes', () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ClientesPendientesScreen(),
+                ),
+              );
+            }),
             customButton('Agregar Gastos', () {
               // Acción pendiente
             }),

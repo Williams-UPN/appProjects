@@ -12,11 +12,11 @@ class TarjetaClienteScreen extends StatefulWidget {
 class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   final supabase = Supabase.instance.client;
   Map<String, dynamic>? cliente;
+  Map<String, dynamic>? historialCerrado;
+  List<Map<String, dynamic>> cronograma = [];
   List<int> cuotasPagadas = [];
   int? cuotaSeleccionada;
   bool _isLoading = true;
-
-  // fecha normalizada del primer pago
   late DateTime primerPagoDate;
 
   @override
@@ -26,26 +26,61 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   Future<void> _fetchData() async {
+    setState(() => _isLoading = true);
     try {
-      final c = await supabase
-          .from('clientes')
+      // Disparo paralelo sin <…> en los select:
+      final Future cFuture = supabase
+          .from('v_clientes_con_estado')
           .select('*')
           .eq('id', widget.clienteId)
           .single();
-      final p = await supabase
+
+      final Future pFuture = supabase
           .from('pagos')
           .select('numero_cuota')
           .eq('cliente_id', widget.clienteId);
 
-      final cuotas =
-          (p as List).map<int>((e) => e['numero_cuota'] as int).toList();
+      final Future crFuture = supabase
+          .from('cronograma')
+          .select('numero_cuota, monto_cuota, fecha_pagado')
+          .eq('cliente_id', widget.clienteId)
+          .order('numero_cuota');
 
+      final Future histFuture = supabase
+          .from('v_cliente_historial_completo')
+          .select('fecha_inicio,fecha_cierre_real,monto_solicitado,'
+              'total_pagado,dias_totales,dias_atraso_max')
+          .eq('cliente_id', widget.clienteId)
+          .maybeSingle();
+
+      // Espero las 4 al mismo tiempo
+      final results =
+          await Future.wait([cFuture, pFuture, crFuture, histFuture]);
+
+      // Casteo cada uno:
+      final Map<String, dynamic> c =
+          (results[0] as Map).cast<String, dynamic>();
+      final List<Map<String, dynamic>> p = (results[1] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+      final List<Map<String, dynamic>> cron = (results[2] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+      final Map<String, dynamic>? hist = results[3] == null
+          ? null
+          : (results[3] as Map).cast<String, dynamic>();
+
+      // Normaliza la fecha de primer pago
       final rawPrimer = DateTime.parse(c['fecha_primer_pago'] as String);
-      primerPagoDate = DateTime(rawPrimer.year, rawPrimer.month, rawPrimer.day);
+      final primer = DateTime(rawPrimer.year, rawPrimer.month, rawPrimer.day);
 
+      // Un solo setState
       setState(() {
         cliente = c;
-        cuotasPagadas = cuotas;
+        cuotasPagadas = p.map((e) => e['numero_cuota'] as int).toList();
+        cronograma = cron;
+        historialCerrado = hist;
+        primerPagoDate = primer;
         cuotaSeleccionada = null;
         _isLoading = false;
       });
@@ -60,12 +95,11 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   Future<void> _registrarPago() async {
     if (cuotaSeleccionada == null) return;
 
-    final num diario = cliente!['cuota_diaria'] as num;
-    final num ultima = cliente!['ultima_cuota'] as num;
-    final int plazoDias = cliente!['plazo_dias'] as int;
-
-    final bool esUltima = cuotaSeleccionada == plazoDias;
-    final num montoAPagar = esUltima ? ultima : diario;
+    final diario = cliente!['cuota_diaria'] as num;
+    final ultima = cliente!['ultima_cuota'] as num;
+    final plazoDias = cliente!['plazo_dias'] as int;
+    final esUltima = cuotaSeleccionada == plazoDias;
+    final montoAPagar = esUltima ? ultima : diario;
 
     try {
       await supabase.from('pagos').insert({
@@ -73,8 +107,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         'numero_cuota': cuotaSeleccionada,
         'monto_pagado': montoAPagar,
       });
-
-      // Luego recargamos para obtener el saldo actualizado
       await _fetchData();
     } catch (e) {
       if (mounted) {
@@ -85,35 +117,193 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   Future<void> _confirmarYRegistrarPago() async {
-    final num diario = cliente!['cuota_diaria'] as num;
-    final num ultima = cliente!['ultima_cuota'] as num;
-    final int plazoDias = cliente!['plazo_dias'] as int;
+    final diario = cliente!['cuota_diaria'] as num;
+    final ultima = cliente!['ultima_cuota'] as num;
+    final plazoDias = cliente!['plazo_dias'] as int;
+    final esUltima = cuotaSeleccionada == plazoDias;
+    final valorCuota = esUltima ? ultima : diario;
 
-    final bool esUltima = cuotaSeleccionada == plazoDias;
-    final num valorCuota = esUltima ? ultima : diario;
-
+    String? obsIncidencia;
     final confirmado = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Confirmar pago'),
-        content: Text(
-          '¿Deseas registrar el pago de la cuota $cuotaSeleccionada '
-          'por S/$valorCuota?',
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('CONFIRMAR PAGO',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              Text(
+                '¿Registrar pago de la cuota $cuotaSeleccionada \npor S/${valorCuota.toStringAsFixed(2)}?',
+                textAlign: TextAlign.justify,
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 150),
+                child: TextField(
+                  minLines: 1,
+                  maxLines: 5,
+                  onChanged: (t) =>
+                      obsIncidencia = t.trim().isEmpty ? null : t.trim(),
+                  decoration: InputDecoration(
+                    hintText: 'Observaciones (opcional)',
+                    isDense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancelar')),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Confirmar')),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Confirmar')),
-        ],
       ),
     );
 
     if (confirmado == true) {
+      if (obsIncidencia != null) {
+        await supabase.from('historial_eventos').insert({
+          'cliente_id': widget.clienteId,
+          'descripcion': obsIncidencia,
+        });
+      }
       await _registrarPago();
     }
+  }
+
+  void _mostrarHistorial() {
+    final h = historialCerrado!;
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.white, // fondo blanco
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ——— título ———
+              const Text(
+                'HISTORIAL DE PAGO',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              const Divider(thickness: 1), // línea divisoria
+              const SizedBox(height: 12),
+
+              // ——— contenido alineado ———
+              _buildHistRow(
+                  label: 'Inicio:', value: _formatFecha(h['fecha_inicio'])),
+              _buildHistRow(
+                  label: 'Fin:', value: _formatFecha(h['fecha_cierre_real'])),
+              _buildHistRow(
+                  label: 'Monto solicitado:',
+                  value: 'S/${h['monto_solicitado']}'),
+              _buildHistRow(
+                  label: 'Total pagado:', value: 'S/${h['total_pagado']}'),
+              _buildHistRow(
+                  label: 'Días totales:', value: '${h['dias_totales']}'),
+              _buildHistRow(
+                  label: 'Días de atraso:', value: '${h['dias_atraso_max']}'),
+
+              const SizedBox(height: 16),
+              const Divider(thickness: 1),
+              const SizedBox(height: 16),
+
+              // ——— botón Cerrar ———
+              SizedBox(
+                height: 40,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFF90CAF9), // tu azul claro
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'Cerrar',
+                    style: TextStyle(
+                      color: Colors.black, // texto negro
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Fila interna para alinear etiqueta + valor
+  Widget _buildHistRow({required String label, required String value}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+              softWrap: false, // no hace salto
+              maxLines: 1, // sólo una línea
+              overflow: TextOverflow.visible, // deja que se vea todo
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.w400),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatFecha(dynamic fecha) {
+    if (fecha == null) return '-';
+    final dt = DateTime.parse(fecha.toString());
+    return '${dt.day.toString().padLeft(2, '0')}/'
+        '${dt.month.toString().padLeft(2, '0')}/'
+        '${dt.year}';
   }
 
   int get siguienteCuotaValida {
@@ -122,42 +312,32 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   String _estadoLabel(String raw, int diasAtraso) {
-    final hoy = DateTime.now();
-    final today = DateTime(hoy.year, hoy.month, hoy.day);
-    if (raw == 'al_dia' && primerPagoDate.isAfter(today)) {
-      return 'Pago próximo';
-    }
     switch (raw) {
-      case 'pendiente':
-        return 'Pago pendiente hoy';
-      case 'atrasado':
-        return '$diasAtraso ${diasAtraso == 1 ? 'día' : 'días'} de atraso';
-      case 'al_dia':
-        return 'Al día';
+      case 'proximo':
+        return 'Pago próximo';
       case 'completo':
         return 'Completado';
+      case 'atrasado':
+        return '$diasAtraso día(s) de atraso';
+      case 'pendiente':
+        return 'Pago pendiente hoy';
       default:
-        return raw;
+        return 'Al día';
     }
   }
 
   Color _estadoColor(String raw) {
-    final hoy = DateTime.now();
-    final today = DateTime(hoy.year, hoy.month, hoy.day);
-    if (raw == 'al_dia' && primerPagoDate.isAfter(today)) {
-      return Colors.green;
-    }
     switch (raw) {
+      case 'proximo':
+        return Colors.blue;
       case 'pendiente':
         return Colors.orange;
       case 'atrasado':
         return Colors.red;
-      case 'al_dia':
-        return Colors.green;
       case 'completo':
-        return Colors.blue;
+        return Colors.green;
       default:
-        return Colors.black;
+        return Colors.green;
     }
   }
 
@@ -172,22 +352,17 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final nombre = cliente!['nombre'] as String;
     final negocio = cliente!['negocio'] as String?;
     final montoSolicitado = cliente!['monto_solicitado'] as num;
-    final cuotaDiaria = cliente!['cuota_diaria'] as num;
     final saldoPendiente = cliente!['saldo_pendiente'] as num;
     final plazoDias = cliente!['plazo_dias'] as int;
-    final estadoRaw = cliente!['estado_pago'] as String;
-    final diasAtraso = cliente!['dias_atraso'] as int;
+    final estadoRaw = cliente!['estado_real'] as String;
+    final diasAtraso = cliente!['dias_reales'] as int;
 
-    // <<< NUEVA LÓGICA PARA DISPLAY DE ÚLTIMA CUOTA >>>
-    final hoy = DateTime.now();
-    final today = DateTime(hoy.year, hoy.month, hoy.day);
-    final ultimoVenc = primerPagoDate.add(Duration(days: plazoDias - 1));
-    final esUltimoDia = today == ultimoVenc;
-    final displayCuota = (esUltimoDia && saldoPendiente < cuotaDiaria)
-        ? saldoPendiente
-        : cuotaDiaria;
-    // <<< FIN CAMBIO >>>
-
+    // Calcular cuota a mostrar
+    final cuotaData = cronograma.firstWhere(
+      (r) => r['numero_cuota'] == cuotaSeleccionada,
+      orElse: () => {'monto_cuota': cliente!['cuota_diaria']},
+    );
+    final num displayCuota = cuotaData['monto_cuota'] as num;
     final label = _estadoLabel(estadoRaw, diasAtraso);
     final color = _estadoColor(estadoRaw);
 
@@ -217,23 +392,24 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _InfoRow(
-                      label: 'Monto prestado:',
-                      value: 'S/$montoSolicitado',
-                      color: Colors.green),
+                    label: 'Monto prestado:',
+                    value: 'S/$montoSolicitado',
+                    color: Colors.green,
+                  ),
                   _InfoRow(
-                      label: 'Saldo pendiente:',
-                      value: 'S/${saldoPendiente.toStringAsFixed(2)}',
-                      color: Colors.red),
-                  // Aquí mostramos displayCuota en lugar de cuotaDiaria:
+                    label: 'Saldo pendiente:',
+                    value: 'S/${saldoPendiente.toStringAsFixed(2)}',
+                    color: Colors.red,
+                  ),
                   _InfoRow(
                     label: 'Cuota diaria:',
                     value: 'S/${displayCuota.toStringAsFixed(2)}',
                   ),
                   const SizedBox(height: 6),
                   Text(label,
+                      textAlign: TextAlign.justify,
                       style:
                           TextStyle(color: color, fontWeight: FontWeight.bold)),
                 ],
@@ -261,7 +437,34 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 },
               ),
             ),
-            const SizedBox(height: 16),
+            // ——— Ver Historial ———
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: GestureDetector(
+                // Solo invoca _mostrarHistorial si está COMPLETO
+                onTap: cliente!['estado_pago'] == 'completo'
+                    ? _mostrarHistorial
+                    : null,
+                child: Opacity(
+                  // Atenúa al 50% cuando NO está completo
+                  opacity: cliente!['estado_pago'] == 'completo' ? 1.0 : 0.5,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.history, color: Colors.black54),
+                      SizedBox(width: 8),
+                      Text(
+                        'Ver Historial del Cliente',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -271,8 +474,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF90CAF9),
                   foregroundColor: Colors.black,
-                  elevation: 6,
-                  shadowColor: Colors.black26,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -288,10 +489,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 }
 
+/// Recuadro informativo para etiqueta + valor
 class _InfoRow extends StatelessWidget {
   final String label, value;
   final Color? color;
   const _InfoRow({required this.label, required this.value, this.color});
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -308,6 +511,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+/// Grid de botones para cada cuota
 class CuotasGrid extends StatelessWidget {
   final int dias;
   final List<int> cuotasPagadas;
@@ -342,10 +546,10 @@ class CuotasGrid extends StatelessWidget {
         mainAxisSpacing: 8,
         childAspectRatio: 1,
       ),
-      itemBuilder: (ctx, idx) {
+      itemBuilder: (_, idx) {
         final numCuota = idx + 1;
-        final rawDue = fechaInicio.add(Duration(days: idx));
-        final dueDate = DateTime(rawDue.year, rawDue.month, rawDue.day);
+        final dueDate = DateTime(
+            fechaInicio.year, fechaInicio.month, fechaInicio.day + idx);
 
         final estaPag = cuotasPagadas.contains(numCuota);
         final sel = cuotaSeleccionada == numCuota;
@@ -361,8 +565,8 @@ class CuotasGrid extends StatelessWidget {
           bg = Colors.orange[100]!;
           border = Colors.orange;
         } else if (esProx) {
-          bg = Colors.green[100]!;
-          border = Colors.green;
+          bg = Colors.blue[100]!;
+          border = Colors.blue;
         } else if (vencida) {
           bg = Colors.red[100]!;
           border = Colors.red;
@@ -391,15 +595,11 @@ class CuotasGrid extends StatelessWidget {
                       if (esHoy)
                         const Text('HOY',
                             style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFFFFA726)))
-                      else if (esProx)
+                                fontSize: 10, fontWeight: FontWeight.w500)),
+                      if (esProx)
                         const Text('PRÓXIMO',
                             style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.green)),
+                                fontSize: 10, fontWeight: FontWeight.w500)),
                     ],
                   ),
           ),

@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../tarjeta_cliente/tarjeta_cliente_screen.dart'; // Ajusta la ruta si es necesario
+import '../tarjeta_cliente/tarjeta_cliente_screen.dart';
 
-class ListaDeClientesScreen extends StatefulWidget {
-  const ListaDeClientesScreen({super.key});
+class ClientesPendientesScreen extends StatefulWidget {
+  const ClientesPendientesScreen({super.key});
 
   @override
-  State<ListaDeClientesScreen> createState() => _ListaDeClientesScreenState();
+  State<ClientesPendientesScreen> createState() =>
+      _ClientesPendientesScreenState();
 }
 
-class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
+class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
   final supabase = Supabase.instance.client;
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchCtrl = TextEditingController();
@@ -25,7 +26,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchClientes();
+    _fetchClientesPendientes();
     _scrollController.addListener(_onScroll);
     _searchCtrl.addListener(() {
       setState(() {
@@ -49,25 +50,28 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     }
   }
 
-  Future<void> _fetchClientes() async {
+  Future<void> _fetchClientesPendientes() async {
     setState(() => _isLoading = true);
     try {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-            'id, nombre, telefono, direccion, negocio, estado_real, '
-            'dias_reales, score_actual, has_history',
+            '''id,nombre,telefono,direccion,negocio,estado_real,dias_reales,score_actual''',
           )
-          .order('id', ascending: true)
+          .gt('dias_reales', 0)
+          .order('dias_reales')
+          .order('id')
           .range(0, _pageSize - 1);
+
       if (!mounted) return;
       _clientes = List<Map<String, dynamic>>.from(data);
       _page = 0;
       _applyLocalFilter();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar pendientes: $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -84,10 +88,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-            'id, nombre, telefono, direccion, negocio, estado_real, '
-            'dias_reales, score_actual, has_history',
+            '''id,nombre,telefono,direccion,negocio,estado_real,dias_reales,score_actual''',
           )
-          .order('id', ascending: true)
+          .gt('dias_reales', 0)
+          .order('dias_reales')
+          .order('id')
           .range(from, to);
       final more = List<Map<String, dynamic>>.from(data);
       if (more.isNotEmpty && mounted) {
@@ -95,7 +100,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         _applyLocalFilter();
       }
     } catch (_) {
-      // manejar error opcionalmente
+      // opcional: manejar error
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
@@ -204,59 +209,41 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Lista de Clientes')),
+      appBar: AppBar(title: const Text('Clientes Atrasados')),
       body: Column(
         children: [
           // Barra de búsqueda
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(0, 0, 0, 0.05),
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, size: 20, color: Colors.grey),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl,
-                      decoration: const InputDecoration(
-                        hintText: 'Buscar cliente…',
-                        hintStyle: TextStyle(fontSize: 14, color: Colors.grey),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                  if (_searchTerm.isNotEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        _searchCtrl.clear();
-                        setState(() => _searchTerm = '');
-                        _applyLocalFilter();
-                      },
-                      child:
-                          const Icon(Icons.close, size: 20, color: Colors.grey),
-                    ),
-                ],
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Buscar cliente…',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchTerm.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          _searchCtrl.clear();
+                          setState(() {
+                            _searchTerm = '';
+                            _applyLocalFilter();
+                          });
+                        },
+                        child: const Icon(Icons.close),
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
               ),
             ),
           ),
 
-          // Lista de tarjetas
+          // Lista de clientes
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -273,21 +260,17 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                         );
                       }
                       final c = _filteredClientes[index];
+
                       final score = (c['score_actual'] as int?) ?? 0;
                       final hasHistory = (c['has_history'] as bool?) ?? false;
-                      final estado = c['estado_real'] as String;
-
-                      // “Nuevo” solo si no tiene historial
+                      // “Nuevo” solo si NO tiene historial
                       final isNew = !hasHistory;
-
                       // Estrellas: 5 si es nuevo, si no según score
                       final stars = isNew ? 5 : _scoreToStars(score);
-
-                      // Etiqueta: “¡nuevo!” o la habitual según score
+                      // Etiqueta: “¡nuevo!” o la habitual según puntuación
                       final categoryLabel =
                           isNew ? '¡nuevo!' : _labelParaScore(score);
-
-                      // Color: gris para nuevo, si no según score
+                      // Color: gris para nuevo, si no según puntuación
                       final categoryColor =
                           isNew ? Colors.grey : _colorParaScore(score);
 
@@ -300,11 +283,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                   TarjetaClienteScreen(clienteId: c['id']),
                             ),
                           );
-                          await _fetchClientes();
+                          _fetchClientesPendientes();
                         },
                         child: Card(
                           margin: const EdgeInsets.only(bottom: 10),
-                          elevation: 4,
+                          elevation: 2,
                           child: ListTile(
                             title: Row(
                               children: [
@@ -322,20 +305,18 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  // Panel izquierdo
                                   Expanded(
                                     flex: 2,
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text("Teléfono: ${c['telefono']}"),
-                                        Text("Dirección: ${c['direccion']}"),
-                                        Text("Negocio: ${c['negocio'] ?? '-'}"),
+                                        Text("Tel: ${c['telefono']}"),
+                                        Text("Dir: ${c['direccion']}"),
+                                        Text("Neg: ${c['negocio'] ?? '-'}"),
                                       ],
                                     ),
                                   ),
-                                  // Panel derecho
                                   Expanded(
                                     flex: 1,
                                     child: Column(
@@ -351,7 +332,15 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                             fontSize: 12,
                                           ),
                                         ),
-                                        _buildStatusChip(estado),
+                                        _buildStatusChip(
+                                            c['estado_real'] as String),
+                                        Text(
+                                          '${c['dias_reales']} días atraso',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.red,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
