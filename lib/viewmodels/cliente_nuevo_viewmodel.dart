@@ -5,7 +5,10 @@ import '../models/cliente.dart';
 import '../repositories/cliente_repository.dart';
 
 class ClienteNuevoViewModel extends ChangeNotifier {
-  final _repo = ClienteRepository();
+  final ClienteRepository _repo;
+
+  /// ← Este es el constructor que falta
+  ClienteNuevoViewModel(this._repo);
 
   int _currentStep = 0;
   bool _isLoading = false;

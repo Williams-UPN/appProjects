@@ -1,8 +1,14 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
+
+import 'repositories/cliente_repository.dart';
+import 'viewmodels/cliente_nuevo_viewmodel.dart';
+import 'viewmodels/lista_clientes_viewmodel.dart';
 
 import 'screens/splash.dart';
 import 'screens/main_menu/main_menu_screen.dart';
@@ -10,11 +16,10 @@ import 'screens/lista_de_clientes/lista_de_clientes_screen.dart';
 import 'screens/cliente_nuevo/cliente_nuevo_screen.dart';
 import 'screens/cliente_pendiente/cliente_pendiente_screen.dart';
 
-import 'viewmodels/cliente_nuevo_viewmodel.dart';
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // → tu barra de estado blanca
+
+  // Barra de estado blanca
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.white,
@@ -22,6 +27,7 @@ Future<void> main() async {
       statusBarBrightness: Brightness.light,
     ),
   );
+
   await dotenv.load(fileName: '.env');
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
@@ -31,8 +37,21 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ClienteNuevoViewModel()),
-        // otros ViewModels aquí...
+        // 1) Proveemos el repositorio centralizado
+        Provider<ClienteRepository>(
+          create: (_) => ClienteRepository(),
+        ),
+
+        // 2) Inyectamos el repo en el ViewModel de "Nuevo Cliente"
+        ChangeNotifierProvider<ClienteNuevoViewModel>(
+          create: (ctx) => ClienteNuevoViewModel(ctx.read<ClienteRepository>()),
+        ),
+
+        // 3) Inyectamos el repo en el ViewModel de "Listado de Clientes"
+        ChangeNotifierProvider<ListaClientesViewModel>(
+          create: (ctx) =>
+              ListaClientesViewModel(ctx.read<ClienteRepository>()),
+        ),
       ],
       child: const MyApp(),
     ),
@@ -41,6 +60,7 @@ Future<void> main() async {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -60,19 +80,15 @@ class MyApp extends StatelessWidget {
           backgroundColor: Colors.white,
           foregroundColor: Colors.black,
         ),
-
-        // ——————————————————————————————
-        // aquí mantenemos tu estilo de botones "pill"
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFBBDEFB), // tu azul claro
+            backgroundColor: const Color(0xFFBBDEFB),
             foregroundColor: Colors.black87,
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-            shape: const StadiumBorder(), // pill shape
+            shape: const StadiumBorder(),
             textStyle: const TextStyle(fontSize: 16),
           ),
         ),
-        // ——————————————————————————————
       ),
     );
   }

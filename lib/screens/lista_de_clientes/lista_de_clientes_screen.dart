@@ -1,6 +1,11 @@
+// lib/screens/lista_de_clientes/lista_de_clientes_screen.dart
+
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../tarjeta_cliente/tarjeta_cliente_screen.dart'; // Ajusta la ruta si es necesario
+import 'package:provider/provider.dart';
+
+import '../../models/cliente_read.dart';
+import '../../viewmodels/lista_clientes_viewmodel.dart';
+import '../tarjeta_cliente/tarjeta_cliente_screen.dart';
 
 class ListaDeClientesScreen extends StatefulWidget {
   const ListaDeClientesScreen({super.key});
@@ -10,29 +15,21 @@ class ListaDeClientesScreen extends StatefulWidget {
 }
 
 class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
-  final supabase = Supabase.instance.client;
-  final ScrollController _scrollController = ScrollController();
+  late final ScrollController _scrollController;
   final TextEditingController _searchCtrl = TextEditingController();
-
-  List<Map<String, dynamic>> _clientes = [];
-  List<Map<String, dynamic>> _filteredClientes = [];
-  bool _isLoading = true;
-  bool _isLoadingMore = false;
-  int _page = 0;
-  static const int _pageSize = 20;
   String _searchTerm = '';
 
   @override
   void initState() {
     super.initState();
-    _fetchClientes();
-    _scrollController.addListener(_onScroll);
-    _searchCtrl.addListener(() {
-      setState(() {
-        _searchTerm = _searchCtrl.text.toLowerCase();
-        _applyLocalFilter();
+    _scrollController = ScrollController()
+      ..addListener(() {
+        final vm = context.read<ListaClientesViewModel>();
+        if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100) {
+          vm.loadMore();
+        }
       });
-    });
   }
 
   @override
@@ -40,80 +37,6 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     _scrollController.dispose();
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 100) {
-      _loadMore();
-    }
-  }
-
-  Future<void> _fetchClientes() async {
-    setState(() => _isLoading = true);
-    try {
-      final data = await supabase
-          .from('v_clientes_con_estado')
-          .select(
-            'id, nombre, telefono, direccion, negocio, estado_real, '
-            'dias_reales, score_actual, has_history',
-          )
-          .order('id', ascending: true)
-          .range(0, _pageSize - 1);
-      if (!mounted) return;
-      _clientes = List<Map<String, dynamic>>.from(data);
-      _page = 0;
-      _applyLocalFilter();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_isLoadingMore) return;
-    setState(() => _isLoadingMore = true);
-    _page++;
-    final from = _page * _pageSize;
-    final to = from + _pageSize - 1;
-    try {
-      final data = await supabase
-          .from('v_clientes_con_estado')
-          .select(
-            'id, nombre, telefono, direccion, negocio, estado_real, '
-            'dias_reales, score_actual, has_history',
-          )
-          .order('id', ascending: true)
-          .range(from, to);
-      final more = List<Map<String, dynamic>>.from(data);
-      if (more.isNotEmpty && mounted) {
-        _clientes.addAll(more);
-        _applyLocalFilter();
-      }
-    } catch (_) {
-      // manejar error opcionalmente
-    } finally {
-      if (mounted) setState(() => _isLoadingMore = false);
-    }
-  }
-
-  void _applyLocalFilter() {
-    if (_searchTerm.isEmpty) {
-      _filteredClientes = List.from(_clientes);
-    } else {
-      _filteredClientes = _clientes.where((c) {
-        final nombre = (c['nombre'] as String).toLowerCase();
-        final telefono = (c['telefono'] as String).toLowerCase();
-        final negocio = (c['negocio'] as String? ?? '').toLowerCase();
-        return nombre.contains(_searchTerm) ||
-            telefono.contains(_searchTerm) ||
-            negocio.contains(_searchTerm);
-      }).toList();
-    }
   }
 
   Color _colorParaEstado(String estado) {
@@ -205,167 +128,127 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Lista de Clientes')),
-      body: Column(
-        children: [
-          // Barra de búsqueda
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(0, 0, 0, 0.05),
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, size: 20, color: Colors.grey),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl,
-                      decoration: const InputDecoration(
-                        hintText: 'Buscar cliente…',
-                        hintStyle: TextStyle(fontSize: 14, color: Colors.grey),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      style: const TextStyle(fontSize: 14),
+      body: Consumer<ListaClientesViewModel>(
+        builder: (context, vm, _) {
+          if (vm.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final list = vm.filteredClientes;
+
+          return Column(
+            children: [
+              // Barra de búsqueda con estilo redondeado
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: TextField(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar cliente…',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchTerm.isNotEmpty
+                        ? GestureDetector(
+                            onTap: () {
+                              _searchCtrl.clear();
+                              setState(() {
+                                _searchTerm = '';
+                                vm.updateSearch('');
+                              });
+                            },
+                            child: const Icon(Icons.close),
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
                     ),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
                   ),
-                  if (_searchTerm.isNotEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        _searchCtrl.clear();
-                        setState(() => _searchTerm = '');
-                        _applyLocalFilter();
-                      },
-                      child:
-                          const Icon(Icons.close, size: 20, color: Colors.grey),
-                    ),
-                ],
+                  onChanged: (v) {
+                    _searchTerm = v.toLowerCase();
+                    vm.updateSearch(_searchTerm);
+                  },
+                ),
               ),
-            ),
-          ),
 
-          // Lista de tarjetas
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount:
-                        _filteredClientes.length + (_isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= _filteredClientes.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final c = _filteredClientes[index];
-                      final score = (c['score_actual'] as int?) ?? 0;
-                      final hasHistory = (c['has_history'] as bool?) ?? false;
-                      final estado = c['estado_real'] as String;
+              // Listado con paginación
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: list.length + (vm.isLoadingMore ? 1 : 0),
+                  itemBuilder: (_, index) {
+                    if (index >= list.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    final ClienteRead c = list[index];
+                    final isNew = !c.hasHistory;
+                    final stars = isNew ? 5 : _scoreToStars(c.scoreActual);
+                    final label =
+                        isNew ? '¡nuevo!' : _labelParaScore(c.scoreActual);
+                    final color =
+                        isNew ? Colors.grey : _colorParaScore(c.scoreActual);
 
-                      // “Nuevo” solo si no tiene historial
-                      final isNew = !hasHistory;
-
-                      // Estrellas: 5 si es nuevo, si no según score
-                      final stars = isNew ? 5 : _scoreToStars(score);
-
-                      // Etiqueta: “¡nuevo!” o la habitual según score
-                      final categoryLabel =
-                          isNew ? '¡nuevo!' : _labelParaScore(score);
-
-                      // Color: gris para nuevo, si no según score
-                      final categoryColor =
-                          isNew ? Colors.grey : _colorParaScore(score);
-
-                      return InkWell(
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      child: ListTile(
                         onTap: () async {
                           await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
-                                  TarjetaClienteScreen(clienteId: c['id']),
+                                  TarjetaClienteScreen(clienteId: c.id),
                             ),
                           );
-                          await _fetchClientes();
+                          vm.loadInitial();
                         },
-                        child: Card(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          elevation: 4,
-                          child: ListTile(
-                            title: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    c['nombre'] as String,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                _buildStarRating(stars),
-                              ],
-                            ),
-                            subtitle: IntrinsicHeight(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  // Panel izquierdo
-                                  Expanded(
-                                    flex: 2,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text("Teléfono: ${c['telefono']}"),
-                                        Text("Dirección: ${c['direccion']}"),
-                                        Text("Negocio: ${c['negocio'] ?? '-'}"),
-                                      ],
-                                    ),
-                                  ),
-                                  // Panel derecho
-                                  Expanded(
-                                    flex: 1,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          categoryLabel,
-                                          style: TextStyle(
-                                            color: categoryColor,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        _buildStatusChip(estado),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                c.nombre,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
-                            isThreeLine: true,
-                          ),
+                            _buildStarRating(stars),
+                          ],
                         ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Teléfono: ${c.telefono}'),
+                            Text('Dirección: ${c.direccion}'),
+                            Text('Negocio: ${c.negocio}'),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  label,
+                                  style: TextStyle(color: color, fontSize: 12),
+                                ),
+                                _buildStatusChip(c.estadoReal),
+                              ],
+                            ),
+                          ],
+                        ),
+                        isThreeLine: true,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
