@@ -58,10 +58,11 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
           .select(
             '''id,nombre,telefono,direccion,negocio,estado_real,dias_reales,score_actual''',
           )
-          .gt('dias_reales', 0) // solo atrasados
-          .order('dias_reales') // ordenar por días de atraso ascendente
-          .order('id') // luego por id para paginación consistente
+          .gt('dias_reales', 0)
+          .order('dias_reales')
+          .order('id')
           .range(0, _pageSize - 1);
+
       if (!mounted) return;
       _clientes = List<Map<String, dynamic>>.from(data);
       _page = 0;
@@ -87,16 +88,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-            '''
-id,
-nombre,
-telefono,
-direccion,
-negocio,
-estado_real,
-dias_reales,
-score_actual
-''',
+            '''id,nombre,telefono,direccion,negocio,estado_real,dias_reales,score_actual''',
           )
           .gt('dias_reales', 0)
           .order('dias_reales')
