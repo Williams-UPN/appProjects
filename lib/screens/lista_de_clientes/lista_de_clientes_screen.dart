@@ -55,7 +55,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales')
+              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales, score_actual')
           .order('id', ascending: true)
           .range(0, _pageSize - 1);
       if (!mounted) return;
@@ -64,9 +64,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       _applyLocalFilter();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error cargando clientes: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -83,7 +82,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
       final data = await supabase
           .from('v_clientes_con_estado')
           .select(
-              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales')
+              'id, nombre, telefono, direccion, negocio, estado_real, dias_reales, score_actual')
           .order('id', ascending: true)
           .range(from, to);
       final more = List<Map<String, dynamic>>.from(data);
@@ -91,8 +90,8 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         _clientes.addAll(more);
         _applyLocalFilter();
       }
-    } catch (e) {
-      // opcional: manejar error
+    } catch (_) {
+      // manejar error opcionalmente
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
@@ -158,6 +157,44 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
         Text(label, style: TextStyle(fontSize: 12, color: color)),
       ],
     );
+  }
+
+  int _scoreToStars(int score) {
+    if (score >= 90) return 5;
+    if (score >= 75) return 4;
+    if (score >= 50) return 3;
+    if (score >= 25) return 2;
+    if (score >= 1) return 1;
+    return 0;
+  }
+
+  Widget _buildStarRating(int stars) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        return Icon(
+          i < stars ? Icons.star : Icons.star_border,
+          size: 16,
+          color: Colors.amber,
+        );
+      }),
+    );
+  }
+
+  String _labelParaScore(int score) {
+    if (score >= 90) return 'Excelente';
+    if (score >= 75) return 'Buen pagador';
+    if (score >= 50) return 'Riesgo medio';
+    if (score >= 25) return 'Riesgo alto';
+    return 'Incumplidor';
+  }
+
+  Color _colorParaScore(int score) {
+    if (score >= 90) return Colors.green;
+    if (score >= 75) return Colors.lightGreen;
+    if (score >= 50) return Colors.orange;
+    if (score >= 25) return Colors.deepOrange;
+    return Colors.red;
   }
 
   @override
@@ -232,6 +269,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                         );
                       }
                       final c = _filteredClientes[index];
+                      final score = (c['score_actual'] as int?) ?? 0;
+                      final stars = _scoreToStars(score);
+                      final categoryLabel = _labelParaScore(score);
+                      final categoryColor = _colorParaScore(score);
+
                       return InkWell(
                         onTap: () async {
                           await Navigator.push(
@@ -247,32 +289,59 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                           margin: const EdgeInsets.only(bottom: 10),
                           elevation: 4,
                           child: ListTile(
-                            title: Text(
-                              c['nombre'] as String,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            title: Row(
                               children: [
-                                Text('Teléfono: ${c['telefono']}'),
-                                Text('Dirección: ${c['direccion']}'),
-                                // Nuevo Row con spaceBetween
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Negocio: ${c['negocio'] ?? '-'}',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    _buildStatusChip(
-                                        c['estado_real'] as String),
-                                  ],
+                                Expanded(
+                                  child: Text(
+                                    c['nombre'] as String,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                  ),
                                 ),
+                                _buildStarRating(stars),
                               ],
+                            ),
+                            subtitle: IntrinsicHeight(
+                              // <<< envuelve aquí
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment
+                                    .stretch, // estira a la altura intrínseca
+                                children: [
+                                  // Panel izquierdo
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text("Teléfono: ${c['telefono']}"),
+                                        Text("Dirección: ${c['direccion']}"),
+                                        Text("Negocio: ${c['negocio'] ?? '-'}"),
+                                      ],
+                                    ),
+                                  ),
+                                  // Panel derecho
+                                  Expanded(
+                                    flex: 1,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          categoryLabel,
+                                          style: TextStyle(
+                                              color: categoryColor,
+                                              fontSize: 12),
+                                        ),
+                                        _buildStatusChip(
+                                            c['estado_real'] as String),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             isThreeLine: true,
                           ),

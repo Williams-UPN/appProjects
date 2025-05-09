@@ -1,5 +1,5 @@
 -- ==========================================================
--- LIMPIEZA: eliminar triggers, funciones y tablas antiguas
+-- LIMPIEZA: eliminar triggers, funciones, tablas y vistas antiguas
 -- ==========================================================
 DROP TRIGGER IF EXISTS trg_clientes_bi       ON public.clientes;
 DROP TRIGGER IF EXISTS trg_clientes_ai       ON public.clientes;
@@ -22,6 +22,11 @@ DROP TABLE IF EXISTS public.cronograma       CASCADE;
 DROP TABLE IF EXISTS public.clientes         CASCADE;
 DROP TABLE IF EXISTS public.historial_eventos CASCADE;
 DROP TABLE IF EXISTS public.cliente_historial CASCADE;
+
+-- Ahora borramos también las vistas que vamos a recrear:
+DROP VIEW IF EXISTS public.v_clientes_con_estado;
+DROP VIEW IF EXISTS public.v_cliente_score;
+DROP VIEW IF EXISTS public.v_cliente_historial_completo;
 
 -- ==========================================================
 -- 1. TABLAS
@@ -534,37 +539,50 @@ FROM cliente_base cb
 LEFT JOIN pagos_detalle pd ON pd.cliente_id = cb.cliente_id;
 
 -- ==========================================================
--- 13. VISTA “AL VUELO” CORREGIDA: cuenta sólo cuotas vencidas y sin pagar
+-- 13. VISTA “AL VUELO” CORREGIDA + score_actual y has_history
 -- ==========================================================
-
-DROP VIEW IF EXISTS public.v_clientes_con_estado;
-CREATE VIEW public.v_clientes_con_estado AS
-WITH mora AS (
-  SELECT
-    cr.cliente_id,
-    -- Sólo las cuotas vencidas y sin pagar:
-    COUNT(*) FILTER (
-      WHERE cr.fecha_venc < (now() AT TIME ZONE 'America/Lima')::date
-        AND cr.fecha_pagado IS NULL
-    )                                  AS cuotas_vencidas,
-    -- ¿Hay una cuota pendiente HOY?
-    EXISTS (
-      SELECT 1
-      FROM public.cronograma c2
-      WHERE c2.cliente_id   = cr.cliente_id
-        AND c2.fecha_venc   = (now() AT TIME ZONE 'America/Lima')::date
-        AND c2.fecha_pagado IS NULL
-    )                                  AS cuota_hoy_pendiente,
-    -- ¿Ya pagó todas?
-    NOT EXISTS (
-      SELECT 1
-      FROM public.cronograma c3
-      WHERE c3.cliente_id   = cr.cliente_id
-        AND c3.fecha_pagado IS NULL
-    )                                  AS todas_pagadas
-  FROM public.cronograma cr
-  GROUP BY cr.cliente_id
-)
+CREATE OR REPLACE VIEW public.v_clientes_con_estado AS
+WITH
+  mora AS (
+    SELECT
+      cr.cliente_id,
+      COUNT(*) FILTER (
+        WHERE cr.fecha_venc < (now() AT TIME ZONE 'America/Lima')::date
+          AND cr.fecha_pagado IS NULL
+      )                                  AS cuotas_vencidas,
+      EXISTS (
+        SELECT 1 FROM public.cronograma c2
+         WHERE c2.cliente_id   = cr.cliente_id
+           AND c2.fecha_venc   = (now() AT TIME ZONE 'America/Lima')::date
+           AND c2.fecha_pagado IS NULL
+      )                                  AS cuota_hoy_pendiente,
+      NOT EXISTS (
+        SELECT 1 FROM public.cronograma c3
+         WHERE c3.cliente_id   = cr.cliente_id
+           AND c3.fecha_pagado IS NULL
+      )                                  AS todas_pagadas
+    FROM public.cronograma cr
+    GROUP BY cr.cliente_id
+  ),
+  ranked_scores AS (
+    SELECT
+      ch.cliente_id,
+      ch.calificacion      AS score_local,
+      ROW_NUMBER() OVER (
+        PARTITION BY ch.cliente_id
+        ORDER BY ch.fecha_cierre DESC
+      )                   AS rn
+    FROM public.cliente_historial ch
+  ),
+  agg_scores AS (
+    SELECT
+      cliente_id,
+      ROUND(AVG(score_local)::numeric, 0) AS score_actual,
+      TRUE                                AS has_history
+    FROM ranked_scores
+    WHERE rn <= 5
+    GROUP BY cliente_id
+  )
 SELECT
   cli.id,
   cli.nombre,
@@ -580,21 +598,25 @@ SELECT
   cli.cuota_diaria,
   cli.ultima_cuota,
   cli.saldo_pendiente,
-  -- Renombrado para que el front use exactamente este nombre:
+
+  -- ESTE CAMPO lo agregamos para usarlo directamente en Flutter si lo necesitas
+  cli.estado_pago,
+
+  -- los dos que ya tenías para lógica de UI
   m.cuotas_vencidas   AS dias_reales,
   CASE
-    -- 1) Primer pago en el futuro → “próximo”
     WHEN (cli.fecha_primer_pago AT TIME ZONE 'America/Lima')::date
-         > (now() AT TIME ZONE 'America/Lima')::date
-      THEN 'proximo'
-    -- 2) Todas las cuotas ya pagadas → “completo”
+         > (now() AT TIME ZONE 'America/Lima')::date THEN 'proximo'
     WHEN m.todas_pagadas       THEN 'completo'
-    -- 3) Vence hoy → “pendiente”
-    WHEN m.cuota_hoy_pendiente THEN 'pendiente'
-    -- 4) Ya hay cuotas vencidas → “atrasado”
     WHEN m.cuotas_vencidas > 0 THEN 'atrasado'
-    -- 5) Si no aplica ninguno → “al_dia”
+    WHEN m.cuota_hoy_pendiente THEN 'pendiente'
     ELSE 'al_dia'
-  END                   AS estado_real
+  END                   AS estado_real,
+
+  -- scores
+  COALESCE(a.score_actual, 100) AS score_actual,
+  COALESCE(a.has_history, FALSE) AS has_history
+
 FROM public.clientes AS cli
-LEFT JOIN mora m ON m.cliente_id = cli.id;
+LEFT JOIN mora       m ON m.cliente_id = cli.id
+LEFT JOIN agg_scores a ON a.cliente_id = cli.id;
