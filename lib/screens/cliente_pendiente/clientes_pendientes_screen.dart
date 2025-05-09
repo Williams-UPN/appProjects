@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/cliente_read.dart';
 import '../../viewmodels/clientes_pendientes_viewmodel.dart';
 import '../tarjeta_cliente/tarjeta_cliente_screen.dart';
+import '../../widgets/relief_star.dart'; // Asegúrate de tener este widget
 
 class ClientesPendientesScreen extends StatefulWidget {
   const ClientesPendientesScreen({super.key});
@@ -23,11 +24,9 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
   @override
   void initState() {
     super.initState();
-    // Carga inicial tras montar
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ClientesPendientesViewModel>().loadInitial();
     });
-    // Listener de scroll para paginación
     _scrollController = ScrollController()
       ..addListener(() {
         final vm = context.read<ClientesPendientesViewModel>();
@@ -36,7 +35,6 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
           vm.loadMore();
         }
       });
-    // Listener de búsqueda
     _searchCtrl.addListener(() {
       final v = _searchCtrl.text.toLowerCase();
       _searchTerm = v;
@@ -60,25 +58,42 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
     return 0;
   }
 
-  Widget _buildStarRating(int stars) {
+  Widget _buildStatusChip(String estado) {
+    Color color;
+    String label;
+    switch (estado) {
+      case 'proximo':
+        color = Colors.blue;
+        label = 'Próximo';
+        break;
+      case 'al_dia':
+        color = Colors.green;
+        label = 'Al día';
+        break;
+      case 'pendiente':
+        color = Colors.orange;
+        label = 'Vence hoy';
+        break;
+      case 'atrasado':
+        color = Colors.red;
+        label = 'Atrasado';
+        break;
+      case 'completo':
+        color = const Color.fromARGB(255, 23, 211, 29);
+        label = 'Completado';
+        break;
+      default:
+        color = Colors.grey;
+        label = '';
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: List.generate(5, (i) {
-        return Icon(
-          i < stars ? Icons.star : Icons.star_border,
-          size: 16,
-          color: Colors.amber,
-        );
-      }),
+      children: [
+        Icon(Icons.circle, size: 10, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 12, color: color)),
+      ],
     );
-  }
-
-  Color _colorParaScore(int score) {
-    if (score >= 90) return Colors.green;
-    if (score >= 75) return Colors.lightGreen;
-    if (score >= 50) return Colors.orange;
-    if (score >= 25) return Colors.deepOrange;
-    return Colors.red;
   }
 
   String _labelParaScore(int score) {
@@ -89,51 +104,12 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
     return 'Incumplidor';
   }
 
-  Color _colorParaEstado(String estado) {
-    switch (estado) {
-      case 'proximo':
-        return Colors.blue;
-      case 'al_dia':
-        return Colors.green;
-      case 'pendiente':
-        return Colors.orange;
-      case 'atrasado':
-        return Colors.red;
-      case 'completo':
-        return const Color.fromARGB(255, 23, 211, 29);
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _labelParaEstado(String estado) {
-    switch (estado) {
-      case 'proximo':
-        return 'Próximo';
-      case 'al_dia':
-        return 'Al día';
-      case 'pendiente':
-        return 'Vence hoy';
-      case 'atrasado':
-        return 'Atrasado';
-      case 'completo':
-        return 'Completado';
-      default:
-        return '';
-    }
-  }
-
-  Widget _buildStatusChip(String estado) {
-    final color = _colorParaEstado(estado);
-    final label = _labelParaEstado(estado);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.circle, size: 10, color: color),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 12, color: color)),
-      ],
-    );
+  Color _colorParaScore(int score) {
+    if (score >= 90) return Colors.green;
+    if (score >= 75) return Colors.lightGreen;
+    if (score >= 50) return Colors.orange;
+    if (score >= 25) return Colors.deepOrange;
+    return Colors.red;
   }
 
   @override
@@ -150,7 +126,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
 
           return Column(
             children: [
-              // Barra de búsqueda redondeada
+              // Barra de búsqueda redondeada (sin cambios)
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -182,7 +158,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                 ),
               ),
 
-              // Lista paginada
+              // Listado paginado
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
@@ -195,7 +171,6 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                         child: Center(child: CircularProgressIndicator()),
                       );
                     }
-
                     final ClienteRead c = list[index];
                     final score = c.scoreActual;
                     final isNew = !c.hasHistory;
@@ -206,8 +181,17 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                         isNew ? Colors.grey : _colorParaScore(score);
 
                     return Card(
+                      // ────────────── AÑADIDO: fondo pastel-azul ──────────────
+                      color: Colors.blue.shade50,
+                      // Si quieres un azul aún más claro prueba:
+                      // color: Colors.blue.shade25, o Colors.blue.shade100
+                      // ────────────────────────────────────────────────────────
+
                       margin: const EdgeInsets.only(bottom: 10),
-                      elevation: 2,
+                      elevation: 2, // tu sombreado original
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: ListTile(
                         onTap: () async {
                           await Navigator.push(
@@ -228,7 +212,16 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                                     fontWeight: FontWeight.bold),
                               ),
                             ),
-                            _buildStarRating(stars),
+                            // ─────────── Estrellas con ReliefStar ───────────
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(5, (i) {
+                                return ReliefStar(
+                                  filled: i < stars,
+                                  size: 16,
+                                );
+                              }),
+                            ),
                           ],
                         ),
                         subtitle: IntrinsicHeight(

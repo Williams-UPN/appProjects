@@ -1,3 +1,5 @@
+// lib/screens/cliente_nuevo/cliente_nuevo_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/cliente.dart';
@@ -65,11 +67,11 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 4,
-        // Reemplazamos withOpacity por Color.fromRGBO:
         shadowColor: const Color.fromRGBO(0, 0, 0, 0.1),
       ),
       body: Theme(
         data: Theme.of(context).copyWith(
+          // Aquí mantenemos tu colorScheme y tu iconTheme:
           colorScheme: Theme.of(context).colorScheme.copyWith(
                 primary: const Color(0xFF90CAF9),
                 secondary: const Color(0xFF90CAF9),
@@ -96,10 +98,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                   fechaPrimerPago: _fechaPrimerPago,
                 );
                 final ok = await vm.guardarCliente(cliente);
-
-                // ← aquí comprobamos context.mounted
                 if (!context.mounted) return;
-
                 if (ok) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Guardado exitoso')),
@@ -166,12 +165,12 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                       ),
                       DropdownButtonFormField<int>(
                         value: _plazoDias,
-                        items: const [12, 24].map((d) {
-                          return DropdownMenuItem(
-                            value: d,
-                            child: Text('$d días'),
-                          );
-                        }).toList(),
+                        items: const [12, 24]
+                            .map((d) => DropdownMenuItem(
+                                  value: d,
+                                  child: Text('$d días'),
+                                ))
+                            .toList(),
                         decoration: const InputDecoration(labelText: 'Plazo'),
                         onChanged: (v) {
                           _plazoDias = v;
@@ -185,9 +184,9 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                           onTap: _pickFechaPrimerPago,
                           title: const Text('Fecha de primer pago'),
                           subtitle: Text(
-                            '${_fechaPrimerPago.year.toString().padLeft(4, '0')}-'
-                            '${_fechaPrimerPago.month.toString().padLeft(2, '0')}-'
-                            '${_fechaPrimerPago.day.toString().padLeft(2, '0')}',
+                            '${_fechaPrimerPago.year.toString().padLeft(4, '0')}'
+                            '-${_fechaPrimerPago.month.toString().padLeft(2, '0')}'
+                            '-${_fechaPrimerPago.day.toString().padLeft(2, '0')}',
                           ),
                           trailing: const Icon(Icons.calendar_today),
                         ),

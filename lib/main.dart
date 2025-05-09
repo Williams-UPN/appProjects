@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 import 'repositories/cliente_repository.dart';
 import 'viewmodels/cliente_nuevo_viewmodel.dart';
 import 'viewmodels/lista_clientes_viewmodel.dart';
-import 'viewmodels/clientes_pendientes_viewmodel.dart'; // ← IMPORTA AQUÍ
+import 'viewmodels/clientes_pendientes_viewmodel.dart';
 
 import 'screens/splash.dart';
 import 'screens/main_menu/main_menu_screen.dart';
@@ -20,12 +20,11 @@ import 'screens/cliente_pendiente/clientes_pendientes_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Barra de estado blanca
+  // Barra de estado completamente blanca
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.white,
       statusBarIconBrightness: Brightness.dark,
-      statusBarBrightness: Brightness.light,
     ),
   );
 
@@ -38,24 +37,15 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        // Proveedor del repositorio
-        Provider<ClienteRepository>(
-          create: (_) => ClienteRepository(),
-        ),
-
-        // ViewModel para "Nuevo Cliente"
-        ChangeNotifierProvider<ClienteNuevoViewModel>(
+        Provider<ClienteRepository>(create: (_) => ClienteRepository()),
+        ChangeNotifierProvider(
           create: (ctx) => ClienteNuevoViewModel(ctx.read<ClienteRepository>()),
         ),
-
-        // ViewModel para "Listado de Clientes"
-        ChangeNotifierProvider<ListaClientesViewModel>(
+        ChangeNotifierProvider(
           create: (ctx) =>
               ListaClientesViewModel(ctx.read<ClienteRepository>()),
         ),
-
-        // ViewModel para "Clientes Pendientes" ← AÑADE ESTE
-        ChangeNotifierProvider<ClientesPendientesViewModel>(
+        ChangeNotifierProvider(
           create: (ctx) =>
               ClientesPendientesViewModel(ctx.read<ClienteRepository>()),
         ),
@@ -67,7 +57,6 @@ Future<void> main() async {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -82,10 +71,21 @@ class MyApp extends StatelessWidget {
         '/pendientes': (_) => const ClientesPendientesScreen(),
       },
       theme: ThemeData(
+        colorScheme: const ColorScheme.light(
+          primary: Colors.white, // AppBar
+          onPrimary: Colors.black, // texto/iconos en AppBar
+          surface: Colors.white, // tarjetas y superficies Material
+          onSurface: Colors.black, // texto en superficies
+        ),
         scaffoldBackgroundColor: Colors.white,
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
           foregroundColor: Colors.black,
+          elevation: 0,
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.white,
+            statusBarIconBrightness: Brightness.dark,
+          ),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(

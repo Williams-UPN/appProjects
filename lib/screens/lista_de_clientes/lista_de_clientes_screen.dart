@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/cliente_read.dart';
 import '../../viewmodels/lista_clientes_viewmodel.dart';
 import '../tarjeta_cliente/tarjeta_cliente_screen.dart';
+import '../../widgets/relief_star.dart';
 
 class ListaDeClientesScreen extends StatefulWidget {
   const ListaDeClientesScreen({super.key});
@@ -46,19 +47,6 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
     if (score >= 25) return 2;
     if (score >= 1) return 1;
     return 0;
-  }
-
-  Widget _buildStarRating(int stars) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(5, (i) {
-        return Icon(
-          i < stars ? Icons.star : Icons.star_border,
-          size: 16,
-          color: Colors.amber,
-        );
-      }),
-    );
   }
 
   Color _colorParaEstado(String estado) {
@@ -151,9 +139,7 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                         ? GestureDetector(
                             onTap: () {
                               _searchCtrl.clear();
-                              setState(() {
-                                _searchTerm = '';
-                              });
+                              setState(() => _searchTerm = '');
                               vm.updateSearch('');
                             },
                             child: const Icon(Icons.close),
@@ -197,9 +183,15 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                         isNew ? Colors.grey : _colorParaScore(score);
 
                     return Card(
+                      // ───── FONDO PASTEL-AZUL ─────
+                      color: Colors.blue.shade50,
+                      // Ajusta aquí el tono: .shade25, .shade100, etc.
                       margin: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
-                      elevation: 4,
+                      elevation: 4, // tu sombra original
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: ListTile(
                         onTap: () async {
                           await Navigator.push(
@@ -220,7 +212,16 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                     fontWeight: FontWeight.bold),
                               ),
                             ),
-                            _buildStarRating(stars),
+                            // Estrellas con relieve
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(5, (i) {
+                                return ReliefStar(
+                                  filled: i < stars,
+                                  size: 16,
+                                );
+                              }),
+                            ),
                           ],
                         ),
                         subtitle: IntrinsicHeight(
