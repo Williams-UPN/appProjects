@@ -2,15 +2,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-import '../../models/cliente_read.dart';
 import '../../viewmodels/clientes_pendientes_viewmodel.dart';
 import '../tarjeta_cliente/tarjeta_cliente_screen.dart';
-import '../../widgets/relief_star.dart'; // Asegúrate de tener este widget
+import '../../widgets/relief_star.dart';
 
 class ClientesPendientesScreen extends StatefulWidget {
   const ClientesPendientesScreen({super.key});
-
   @override
   State<ClientesPendientesScreen> createState() =>
       _ClientesPendientesScreenState();
@@ -24,9 +21,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ClientesPendientesViewModel>().loadInitial();
-    });
+    // Ya está cargando en el ViewModel desde su constructor
     _scrollController = ScrollController()
       ..addListener(() {
         final vm = context.read<ClientesPendientesViewModel>();
@@ -59,8 +54,8 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
   }
 
   Widget _buildStatusChip(String estado) {
-    Color color;
-    String label;
+    late Color color;
+    late String label;
     switch (estado) {
       case 'proximo':
         color = Colors.blue;
@@ -79,7 +74,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
         label = 'Atrasado';
         break;
       case 'completo':
-        color = const Color.fromARGB(255, 23, 211, 29);
+        color = Colors.green;
         label = 'Completado';
         break;
       default:
@@ -117,16 +112,13 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Clientes Atrasados')),
       body: Consumer<ClientesPendientesViewModel>(
-        builder: (context, vm, _) {
+        builder: (ctx, vm, _) {
           if (vm.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
-
           final list = vm.filteredClientes;
-
           return Column(
             children: [
-              // Barra de búsqueda redondeada (sin cambios)
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -139,9 +131,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                         ? GestureDetector(
                             onTap: () {
                               _searchCtrl.clear();
-                              setState(() {
-                                _searchTerm = '';
-                              });
+                              setState(() => _searchTerm = '');
                               vm.updateSearch('');
                             },
                             child: const Icon(Icons.close),
@@ -157,41 +147,32 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                   ),
                 ),
               ),
-
-              // Listado paginado
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: list.length + (vm.isLoadingMore ? 1 : 0),
-                  itemBuilder: (_, index) {
-                    if (index >= list.length) {
+                  itemBuilder: (_, i) {
+                    if (i >= list.length) {
                       return const Padding(
                         padding: EdgeInsets.all(16),
                         child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    final ClienteRead c = list[index];
-                    final score = c.scoreActual;
-                    final isNew = !c.hasHistory;
-                    final stars = isNew ? 5 : _scoreToStars(score);
-                    final scoreLabel =
-                        isNew ? '¡nuevo!' : _labelParaScore(score);
-                    final scoreColor =
-                        isNew ? Colors.grey : _colorParaScore(score);
-
+                    final c = list[i];
+                    final stars = _scoreToStars(c.scoreActual);
+                    final scoreLabel = c.hasHistory
+                        ? _labelParaScore(c.scoreActual)
+                        : '¡nuevo!';
+                    final scoreColor = c.hasHistory
+                        ? _colorParaScore(c.scoreActual)
+                        : Colors.grey;
                     return Card(
-                      // ────────────── AÑADIDO: fondo pastel-azul ──────────────
                       color: Colors.blue.shade50,
-                      // Si quieres un azul aún más claro prueba:
-                      // color: Colors.blue.shade25, o Colors.blue.shade100
-                      // ────────────────────────────────────────────────────────
-
-                      margin: const EdgeInsets.only(bottom: 10),
-                      elevation: 2, // tu sombreado original
+                      margin: const EdgeInsets.symmetric(vertical: 4),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          borderRadius: BorderRadius.circular(12)),
+                      elevation: 2,
                       child: ListTile(
                         onTap: () async {
                           await Navigator.push(
@@ -206,18 +187,15 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                         title: Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                c.nombre,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
+                              child: Text(c.nombre,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
                             ),
-                            // ─────────── Estrellas con ReliefStar ───────────
                             Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: List.generate(5, (i) {
+                              children: List.generate(5, (j) {
                                 return ReliefStar(
-                                  filled: i < stars,
+                                  filled: j < stars,
                                   size: 16,
                                 );
                               }),
@@ -228,7 +206,6 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // IZQUIERDA: datos
                               Expanded(
                                 flex: 2,
                                 child: Column(
@@ -240,7 +217,6 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                                   ],
                                 ),
                               ),
-                              // DERECHA: score + estado + días atraso
                               Expanded(
                                 flex: 1,
                                 child: Column(
@@ -248,17 +224,13 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      scoreLabel,
-                                      style: TextStyle(
-                                          color: scoreColor, fontSize: 12),
-                                    ),
+                                    Text(scoreLabel,
+                                        style: TextStyle(
+                                            color: scoreColor, fontSize: 12)),
                                     _buildStatusChip(c.estadoReal),
-                                    Text(
-                                      '${c.diasReales} días atraso',
-                                      style: const TextStyle(
-                                          fontSize: 12, color: Colors.red),
-                                    ),
+                                    Text('${c.diasReales} días atraso',
+                                        style: const TextStyle(
+                                            fontSize: 12, color: Colors.red)),
                                   ],
                                 ),
                               ),
