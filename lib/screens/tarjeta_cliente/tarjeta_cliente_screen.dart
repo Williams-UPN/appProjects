@@ -437,6 +437,38 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 },
               ),
             ),
+
+            // ——— Botones estáticos añadidos ———
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      // futuro: launch("tel:${cliente!['telefono']}");
+                    },
+                    icon: const Icon(Icons.phone, size: 20),
+                    label: const Text('Llamar'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      // futuro: abrir mapa con dirección o coords
+                    },
+                    icon: const Icon(Icons.location_on, size: 20),
+                    label: const Text('Ubicación'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      // futuro: flujo refinanciamiento
+                    },
+                    icon: const Icon(Icons.refresh, size: 20),
+                    label: const Text('Refinanciar'),
+                  ),
+                ],
+              ),
+            ),
+
             // ——— Ver Historial ———
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -465,6 +497,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 ),
               ),
             ),
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
