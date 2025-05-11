@@ -2,9 +2,14 @@
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/cliente_read.dart';
+import '../../models/cliente_detail_read.dart';
+import '../../models/pago_read.dart';
+import '../../models/cronograma_read.dart';
+import '../../models/historial_read.dart';
 
 /// Capa de Data Source: sólo llamadas crudas a Supabase.
 abstract class ClienteDatasource {
+  // Listados
   Future<List<ClienteRead>> fetchClientes({int page = 0, int size = 20});
   Future<List<ClienteRead>> searchClientes({
     required String term,
@@ -15,6 +20,16 @@ abstract class ClienteDatasource {
     int page = 0,
     int size = 20,
   });
+
+  // Detalle de cliente
+  Future<ClienteDetailRead> fetchClienteById(int id);
+  Future<List<PagoRead>> fetchPagos(int clienteId);
+  Future<List<CronogramaRead>> fetchCronograma(int clienteId);
+  Future<HistorialRead?> fetchHistorial(int clienteId);
+
+  // Escritura
+  Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
+  Future<bool> registrarEvento(int clienteId, String descripcion);
 }
 
 class SupabaseClienteDatasource implements ClienteDatasource {
@@ -81,5 +96,77 @@ class SupabaseClienteDatasource implements ClienteDatasource {
     return (raw as List)
         .map((m) => ClienteRead.fromMap(m as Map<String, dynamic>))
         .toList();
+  }
+
+  @override
+  Future<ClienteDetailRead> fetchClienteById(int id) async {
+    final raw = await _supabase
+        .from('v_clientes_con_estado')
+        .select(
+          // incluimos aquí monto_solicitado y todos los campos extra
+          'id, nombre, telefono, direccion, negocio, '
+          'estado_real, dias_reales, score_actual, has_history, '
+          'monto_solicitado, fecha_primer_pago, cuota_diaria, '
+          'ultima_cuota, plazo_dias, saldo_pendiente',
+        )
+        .eq('id', id)
+        .single();
+    // nos aseguramos de castear a Map<String, dynamic>
+    return ClienteDetailRead.fromMap(raw);
+  }
+
+  @override
+  Future<List<PagoRead>> fetchPagos(int clienteId) async {
+    final raw = await _supabase
+        .from('pagos')
+        .select('numero_cuota')
+        .eq('cliente_id', clienteId);
+    return (raw as List)
+        .map((e) => PagoRead.fromMap(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<List<CronogramaRead>> fetchCronograma(int clienteId) async {
+    final raw = await _supabase
+        .from('cronograma')
+        .select('numero_cuota, monto_cuota, fecha_pagado')
+        .eq('cliente_id', clienteId)
+        .order('numero_cuota');
+    return (raw as List)
+        .map((e) => CronogramaRead.fromMap(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<HistorialRead?> fetchHistorial(int clienteId) async {
+    final raw = await _supabase
+        .from('v_cliente_historial_completo')
+        .select(
+          'fecha_inicio, fecha_cierre_real, monto_solicitado, '
+          'total_pagado, dias_totales, dias_atraso_max',
+        )
+        .eq('cliente_id', clienteId)
+        .maybeSingle();
+    return raw == null ? null : HistorialRead.fromMap(raw);
+  }
+
+  @override
+  Future<bool> registrarPago(int clienteId, int numeroCuota, num monto) async {
+    final res = await _supabase.from('pagos').insert({
+      'cliente_id': clienteId,
+      'numero_cuota': numeroCuota,
+      'monto_pagado': monto,
+    });
+    return res.error == null;
+  }
+
+  @override
+  Future<bool> registrarEvento(int clienteId, String descripcion) async {
+    final res = await _supabase.from('historial_eventos').insert({
+      'cliente_id': clienteId,
+      'descripcion': descripcion,
+    });
+    return res.error == null;
   }
 }

@@ -11,12 +11,14 @@ import 'repositories/cliente_repository.dart';
 import 'viewmodels/cliente_nuevo_viewmodel.dart';
 import 'viewmodels/lista_clientes_viewmodel.dart';
 import 'viewmodels/clientes_pendientes_viewmodel.dart';
+import 'viewmodels/tarjeta_cliente_viewmodel.dart'; // <-- importa el nuevo ViewModel
 
 import 'screens/splash.dart';
 import 'screens/main_menu/main_menu_screen.dart';
 import 'screens/lista_de_clientes/lista_de_clientes_screen.dart';
 import 'screens/cliente_nuevo/cliente_nuevo_screen.dart';
 import 'screens/cliente_pendiente/clientes_pendientes_screen.dart';
+import 'screens/tarjeta_cliente/tarjeta_cliente_screen.dart'; // opcional para rutas
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +45,8 @@ Future<void> main() async {
             ctx.read<ClienteDatasource>(),
           ),
         ),
+
+        // Tus ViewModels existentes:
         ChangeNotifierProvider(
           create: (ctx) => ClienteNuevoViewModel(ctx.read<ClienteRepository>()),
         ),
@@ -53,6 +57,12 @@ Future<void> main() async {
         ChangeNotifierProvider(
           create: (ctx) =>
               ClientesPendientesViewModel(ctx.read<ClienteRepository>()),
+        ),
+
+        // ——— Nuevo ViewModel para TarjetaCliente ———
+        ChangeNotifierProvider(
+          create: (ctx) =>
+              TarjetaClienteViewModel(ctx.read<ClienteRepository>()),
         ),
       ],
       child: const MyApp(),
@@ -74,6 +84,7 @@ class MyApp extends StatelessWidget {
         '/lista': (_) => const ListaDeClientesScreen(),
         '/nuevo': (_) => const ClienteNuevoScreen(),
         '/pendientes': (_) => const ClientesPendientesScreen(),
+        '/detalle': (_) => const TarjetaClienteScreen(clienteId: 0),
       },
       theme: ThemeData.light().copyWith(
         scaffoldBackgroundColor: Colors.white,
