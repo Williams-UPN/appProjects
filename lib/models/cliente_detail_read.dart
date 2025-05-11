@@ -10,7 +10,7 @@ class ClienteDetailRead {
   final bool hasHistory;
 
   // Campos extra para detalle
-  final num montoSolicitado; // <-- nuevo
+  final num montoSolicitado; // <-- añadido
   final DateTime fechaPrimerPago;
   final num cuotaDiaria;
   final num ultimaCuota;
@@ -27,7 +27,7 @@ class ClienteDetailRead {
     required this.diasReales,
     required this.scoreActual,
     required this.hasHistory,
-    required this.montoSolicitado, // <-- nuevo
+    required this.montoSolicitado, // <-- añadido
     required this.fechaPrimerPago,
     required this.cuotaDiaria,
     required this.ultimaCuota,
@@ -49,13 +49,13 @@ class ClienteDetailRead {
       nombre: m['nombre'] as String,
       telefono: m['telefono'] as String,
       direccion: m['direccion'] as String,
-      negocio: m['negocio'] as String? ?? '',
+      negocio: (m['negocio'] as String?) ?? '', // <-- nullable-safe
       estadoReal: m['estado_real'] as String,
       diasReales: (m['dias_reales'] as num).toInt(),
       scoreActual: (m['score_actual'] as num).toInt(),
       hasHistory: m['has_history'] as bool,
 
-      // ------ aquí el nuevo campo ------
+      // ------ este campo viene de la vista v_clientes_con_estado ------
       montoSolicitado: m['monto_solicitado'] as num,
 
       fechaPrimerPago: fechaPrimer,

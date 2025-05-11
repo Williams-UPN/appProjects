@@ -19,7 +19,7 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   HistorialRead? _historial;
   int? _cuotaSeleccionada;
 
-  // Getters
+  // Getters...
   bool get isLoading => _isLoading;
   ClienteDetailRead? get cliente => _cliente;
   List<PagoRead> get pagos => List.unmodifiable(_pagos);
@@ -27,11 +27,9 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   HistorialRead? get historial => _historial;
   int? get cuotaSeleccionada => _cuotaSeleccionada;
 
-  // Carga inicial de datos
   Future<void> loadData(int clienteId) async {
     _isLoading = true;
     notifyListeners();
-
     try {
       _cliente = await _repo.getClienteById(clienteId);
       _pagos = await _repo.getPagos(clienteId);
@@ -39,41 +37,42 @@ class TarjetaClienteViewModel extends ChangeNotifier {
       _historial = await _repo.getHistorial(clienteId);
       _cuotaSeleccionada = null;
     } catch (e) {
-      // Manejo de errores: podrías notificar con un callback o log
+      debugPrint('🔴 [VM] Error en loadData: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // Seleccionar cuota para registrar
   void selectCuota(int numero) {
     _cuotaSeleccionada = numero;
+    debugPrint('🔔 [VM] cuotaSeleccionada = $numero');
     notifyListeners();
   }
 
-  // Registrar pago: usa el monto del detalle
   Future<bool> registrarPago() async {
     if (_cliente == null || _cuotaSeleccionada == null) return false;
 
-    final monto = _cuotaSeleccionada == _cliente!.plazoDias
+    final numero = _cuotaSeleccionada!;
+    final monto = numero == _cliente!.plazoDias
         ? _cliente!.ultimaCuota
         : _cliente!.cuotaDiaria;
 
-    final ok = await _repo.registrarPago(
-      _cliente!.id,
-      _cuotaSeleccionada!,
-      monto,
-    );
+    debugPrint('🔔 [VM] registrarPago -> cuota: $numero, monto: $monto');
+    final ok = await _repo.registrarPago(_cliente!.id, numero, monto);
+    debugPrint('🔔 [VM] resultado registrarPago: $ok');
+
     if (ok) {
       await loadData(_cliente!.id);
     }
     return ok;
   }
 
-  // Registrar evento si hay observaciones
   Future<bool> registrarEvento(String descripcion) async {
+    debugPrint('🔔 [VM] registrarEvento -> $descripcion');
     if (_cliente == null) return false;
-    return _repo.registrarEvento(_cliente!.id, descripcion);
+    final ok = await _repo.registrarEvento(_cliente!.id, descripcion);
+    debugPrint('🔔 [VM] resultado registrarEvento: $ok');
+    return ok;
   }
 }

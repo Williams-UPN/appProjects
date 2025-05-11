@@ -1,5 +1,4 @@
-// lib/data/datasources/cliente_datasource.dart
-
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/cliente_read.dart';
 import '../../models/cliente_detail_read.dart';
@@ -7,9 +6,7 @@ import '../../models/pago_read.dart';
 import '../../models/cronograma_read.dart';
 import '../../models/historial_read.dart';
 
-/// Capa de Data Source: sólo llamadas crudas a Supabase.
 abstract class ClienteDatasource {
-  // Listados
   Future<List<ClienteRead>> fetchClientes({int page = 0, int size = 20});
   Future<List<ClienteRead>> searchClientes({
     required String term,
@@ -20,14 +17,10 @@ abstract class ClienteDatasource {
     int page = 0,
     int size = 20,
   });
-
-  // Detalle de cliente
   Future<ClienteDetailRead> fetchClienteById(int id);
   Future<List<PagoRead>> fetchPagos(int clienteId);
   Future<List<CronogramaRead>> fetchCronograma(int clienteId);
   Future<HistorialRead?> fetchHistorial(int clienteId);
-
-  // Escritura
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
   Future<bool> registrarEvento(int clienteId, String descripcion);
 }
@@ -103,7 +96,6 @@ class SupabaseClienteDatasource implements ClienteDatasource {
     final raw = await _supabase
         .from('v_clientes_con_estado')
         .select(
-          // incluimos aquí monto_solicitado y todos los campos extra
           'id, nombre, telefono, direccion, negocio, '
           'estado_real, dias_reales, score_actual, has_history, '
           'monto_solicitado, fecha_primer_pago, cuota_diaria, '
@@ -111,7 +103,6 @@ class SupabaseClienteDatasource implements ClienteDatasource {
         )
         .eq('id', id)
         .single();
-    // nos aseguramos de castear a Map<String, dynamic>
     return ClienteDetailRead.fromMap(raw);
   }
 
@@ -153,20 +144,32 @@ class SupabaseClienteDatasource implements ClienteDatasource {
 
   @override
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto) async {
-    final res = await _supabase.from('pagos').insert({
-      'cliente_id': clienteId,
-      'numero_cuota': numeroCuota,
-      'monto_pagado': monto,
-    });
-    return res.error == null;
+    debugPrint('🔔 [DS] Supabase insert pagos -> '
+        '{cliente_id: $clienteId, numero_cuota: $numeroCuota, monto_pagado: $monto}');
+    try {
+      await _supabase.from('pagos').insert({
+        'cliente_id': clienteId,
+        'numero_cuota': numeroCuota,
+        'monto_pagado': monto,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('🔴 [DS] Error registrarPago: $e');
+      return false;
+    }
   }
 
   @override
   Future<bool> registrarEvento(int clienteId, String descripcion) async {
-    final res = await _supabase.from('historial_eventos').insert({
-      'cliente_id': clienteId,
-      'descripcion': descripcion,
-    });
-    return res.error == null;
+    try {
+      await _supabase.from('historial_eventos').insert({
+        'cliente_id': clienteId,
+        'descripcion': descripcion,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('🔴 [DS] Error registrarEvento: $e');
+      return false;
+    }
   }
 }

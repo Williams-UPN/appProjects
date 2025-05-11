@@ -7,7 +7,7 @@ import '../repositories/cliente_repository.dart';
 class ClienteNuevoViewModel extends ChangeNotifier {
   final ClienteRepository _repo;
 
-  /// ← Este es el constructor que falta
+  // Constructor
   ClienteNuevoViewModel(this._repo);
 
   int _currentStep = 0;
@@ -34,7 +34,11 @@ class ClienteNuevoViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    // --- INSTRUMENTACIÓN PARA DEPURAR ---
+    debugPrint('🔔 [VM] Intentando crear cliente: ${cliente.nombre}');
     final success = await _repo.crearCliente(cliente);
+    debugPrint('🔔 [VM] Resultado crearCliente: $success');
+    // --------------------------------------
 
     _isLoading = false;
     notifyListeners();

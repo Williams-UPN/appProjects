@@ -219,16 +219,19 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                   if (vm.currentStep > 0)
                     TextButton(
                       onPressed: details.onStepCancel,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.black,
-                      ),
+                      style:
+                          TextButton.styleFrom(foregroundColor: Colors.black),
                       child: const Text('Atrás'),
                     ),
                   const Spacer(),
                   vm.isLoading
                       ? const CircularProgressIndicator()
                       : ElevatedButton(
-                          onPressed: details.onStepContinue,
+                          onPressed: () {
+                            debugPrint(
+                                '🔔 [UI] onStepContinue pulsado en step ${vm.currentStep}');
+                            details.onStepContinue?.call();
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF90CAF9),
                             foregroundColor: Colors.black87,
