@@ -36,11 +36,16 @@ class ClienteRepositoryImpl implements ClienteRepository {
 
   @override
   Future<bool> crearCliente(Cliente c) async {
+    // ← 1) Trazar datos entrantes
+    debugPrint('🔔 [Repo] crearCliente: ${c.toJson()}');
     try {
       await _supabase.from('clientes').insert(c.toJson());
+      // ← 2) Confirmar éxito
+      debugPrint('✅ [Repo] insert OK');
       return true;
     } catch (e) {
-      debugPrint('🔴 [Repo] Error crearCliente: $e');
+      // ← 3) Loguear el error lanzado
+      debugPrint('❌ [Repo] insert ERROR: $e');
       return false;
     }
   }

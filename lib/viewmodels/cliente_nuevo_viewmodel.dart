@@ -34,11 +34,11 @@ class ClienteNuevoViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // --- INSTRUMENTACIÓN PARA DEPURAR ---
-    debugPrint('🔔 [VM] Intentando crear cliente: ${cliente.nombre}');
+    // ← 1) Antes de llamar al repo
+    debugPrint('🔔 [VM] Intentando crear cliente: ${cliente.toJson()}');
     final success = await _repo.crearCliente(cliente);
+    // ← 2) Después de la llamada
     debugPrint('🔔 [VM] Resultado crearCliente: $success');
-    // --------------------------------------
 
     _isLoading = false;
     notifyListeners();

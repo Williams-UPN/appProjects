@@ -541,8 +541,11 @@ LEFT JOIN pagos_detalle pd ON pd.cliente_id = cb.cliente_id;
 -- ==========================================================
 -- 13. VISTA “AL VUELO” CORREGIDA + score_actual y has_history
 -- ==========================================================
+DROP VIEW IF EXISTS public.v_clientes_con_estado;
+
 CREATE OR REPLACE VIEW public.v_clientes_con_estado AS
 WITH
+  -- 13.1. Cálculo de mora y estado de cuotas
   mora AS (
     SELECT
       cr.cliente_id,
@@ -551,19 +554,23 @@ WITH
           AND cr.fecha_pagado IS NULL
       )                                  AS cuotas_vencidas,
       EXISTS (
-        SELECT 1 FROM public.cronograma c2
+        SELECT 1
+          FROM public.cronograma c2
          WHERE c2.cliente_id   = cr.cliente_id
            AND c2.fecha_venc   = (now() AT TIME ZONE 'America/Lima')::date
            AND c2.fecha_pagado IS NULL
       )                                  AS cuota_hoy_pendiente,
       NOT EXISTS (
-        SELECT 1 FROM public.cronograma c3
+        SELECT 1
+          FROM public.cronograma c3
          WHERE c3.cliente_id   = cr.cliente_id
            AND c3.fecha_pagado IS NULL
       )                                  AS todas_pagadas
     FROM public.cronograma cr
     GROUP BY cr.cliente_id
   ),
+
+  -- 13.2. Selección de los últimos 5 scores de cliente
   ranked_scores AS (
     SELECT
       ch.cliente_id,
@@ -574,6 +581,8 @@ WITH
       )                   AS rn
     FROM public.cliente_historial ch
   ),
+
+  -- 13.3. Agregación del score actual (promedio de hasta 5 últimos)
   agg_scores AS (
     SELECT
       cliente_id,
@@ -583,6 +592,7 @@ WITH
     WHERE rn <= 5
     GROUP BY cliente_id
   )
+
 SELECT
   cli.id,
   cli.nombre,
@@ -599,11 +609,10 @@ SELECT
   cli.ultima_cuota,
   cli.saldo_pendiente,
 
-  -- ESTE CAMPO lo agregamos para usarlo directamente en Flutter si lo necesitas
-  cli.estado_pago,
-
-  -- los dos que ya tenías para lógica de UI
+  -- 13.4. Días de mora real
   m.cuotas_vencidas   AS dias_reales,
+
+  -- 13.5. Estado calculado “al vuelo”
   CASE
     WHEN (cli.fecha_primer_pago AT TIME ZONE 'America/Lima')::date
          > (now() AT TIME ZONE 'America/Lima')::date THEN 'proximo'
@@ -613,7 +622,7 @@ SELECT
     ELSE 'al_dia'
   END                   AS estado_real,
 
-  -- scores
+  -- 13.6. Score y bandera de historial
   COALESCE(a.score_actual, 100) AS score_actual,
   COALESCE(a.has_history, FALSE) AS has_history
 

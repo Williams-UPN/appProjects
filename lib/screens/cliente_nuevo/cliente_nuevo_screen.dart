@@ -71,7 +71,6 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
       ),
       body: Theme(
         data: Theme.of(context).copyWith(
-          // Aquí mantenemos tu colorScheme y tu iconTheme:
           colorScheme: Theme.of(context).colorScheme.copyWith(
                 primary: const Color(0xFF90CAF9),
                 secondary: const Color(0xFF90CAF9),
@@ -84,10 +83,12 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
             currentStep: vm.currentStep,
             onStepContinue: () async {
               if (vm.currentStep == 0) {
+                // Paso 0: datos del cliente
                 if (_formKeyCliente.currentState!.validate()) {
                   vm.avanzarStep();
                 }
               } else {
+                // Paso 1: confirmamos y guardamos
                 final cliente = Cliente(
                   nombre: _nombreCtrl.text,
                   telefono: _telefonoCtrl.text,
@@ -97,7 +98,16 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                   plazoDias: _plazoDias!,
                   fechaPrimerPago: _fechaPrimerPago,
                 );
+
+                // ——— TRACE: antes de llamar al VM ———
+                debugPrint('🔔 [UI] onStepContinue pulsado en step '
+                    '${vm.currentStep} con cliente: ${cliente.toJson()}');
+
                 final ok = await vm.guardarCliente(cliente);
+
+                // ——— TRACE: resultado de guardarCliente ———
+                debugPrint('🔔 [UI] guardarCliente devolvió: $ok');
+
                 if (!context.mounted) return;
                 if (ok) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -117,30 +127,34 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                 title: const Text('Datos del Cliente'),
                 content: Form(
                   key: _formKeyCliente,
-                  child: Column(children: [
-                    TextFormField(
-                      controller: _nombreCtrl,
-                      decoration:
-                          const InputDecoration(labelText: 'Nombre completo'),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
-                    TextFormField(
-                      controller: _telefonoCtrl,
-                      decoration: const InputDecoration(labelText: 'Teléfono'),
-                      keyboardType: TextInputType.phone,
-                      validator: (v) =>
-                          v!.length != 9 ? 'Debe tener 9 dígitos' : null,
-                    ),
-                    TextFormField(
-                      controller: _direccionCtrl,
-                      decoration: const InputDecoration(labelText: 'Dirección'),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
-                    TextFormField(
-                      controller: _negocioCtrl,
-                      decoration: const InputDecoration(labelText: 'Negocio'),
-                    ),
-                  ]),
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: _nombreCtrl,
+                        decoration:
+                            const InputDecoration(labelText: 'Nombre completo'),
+                        validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                      ),
+                      TextFormField(
+                        controller: _telefonoCtrl,
+                        decoration:
+                            const InputDecoration(labelText: 'Teléfono'),
+                        keyboardType: TextInputType.phone,
+                        validator: (v) =>
+                            v!.length != 9 ? 'Debe tener 9 dígitos' : null,
+                      ),
+                      TextFormField(
+                        controller: _direccionCtrl,
+                        decoration:
+                            const InputDecoration(labelText: 'Dirección'),
+                        validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                      ),
+                      TextFormField(
+                        controller: _negocioCtrl,
+                        decoration: const InputDecoration(labelText: 'Negocio'),
+                      ),
+                    ],
+                  ),
                 ),
                 isActive: vm.currentStep == 0,
                 state:
@@ -215,34 +229,39 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
             controlsBuilder: (ctx, details) {
               return Padding(
                 padding: const EdgeInsets.only(top: 16),
-                child: Row(children: [
-                  if (vm.currentStep > 0)
-                    TextButton(
-                      onPressed: details.onStepCancel,
-                      style:
-                          TextButton.styleFrom(foregroundColor: Colors.black),
-                      child: const Text('Atrás'),
-                    ),
-                  const Spacer(),
-                  vm.isLoading
-                      ? const CircularProgressIndicator()
-                      : ElevatedButton(
-                          onPressed: () {
-                            debugPrint(
-                                '🔔 [UI] onStepContinue pulsado en step ${vm.currentStep}');
-                            details.onStepContinue?.call();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF90CAF9),
-                            foregroundColor: Colors.black87,
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 12, horizontal: 24),
-                            shape: const StadiumBorder(),
-                          ),
-                          child: Text(
-                              vm.currentStep == 1 ? 'Confirmar' : 'Siguiente'),
+                child: Row(
+                  children: [
+                    if (vm.currentStep > 0)
+                      TextButton(
+                        onPressed: details.onStepCancel,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
                         ),
-                ]),
+                        child: const Text('Atrás'),
+                      ),
+                    const Spacer(),
+                    vm.isLoading
+                        ? const CircularProgressIndicator()
+                        : ElevatedButton(
+                            onPressed: () {
+                              debugPrint(
+                                  '🔔 [UI] onStepContinue pulsado en step '
+                                  '${vm.currentStep}');
+                              details.onStepContinue?.call();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF90CAF9),
+                              foregroundColor: Colors.black87,
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 12, horizontal: 24),
+                              shape: const StadiumBorder(),
+                            ),
+                            child: Text(vm.currentStep == 1
+                                ? 'Confirmar'
+                                : 'Siguiente'),
+                          ),
+                  ],
+                ),
               );
             },
           ),
