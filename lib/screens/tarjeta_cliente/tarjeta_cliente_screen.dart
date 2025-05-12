@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/cliente_detail_read.dart';
 import '../../models/cronograma_read.dart';
@@ -27,6 +28,26 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     // Leemos el VM y disparar carga de datos
     _vm = context.read<TarjetaClienteViewModel>();
     _vm.loadData(widget.clienteId);
+  }
+
+  Future<void> _llamar(String numero) async {
+    final uri = Uri(scheme: 'tel', path: numero);
+    debugPrint('📞 Intentando llamar a $uri');
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    final can = await canLaunchUrl(uri);
+    if (can) {
+      await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+    } else {
+      // Usamos el messenger capturado, no context directamente
+      messenger.showSnackBar(
+        SnackBar(content: Text('📱 Simulando llamada a $numero')),
+      );
+    }
   }
 
   @override
@@ -180,7 +201,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   TextButton.icon(
-                    onPressed: () {},
+                    onPressed: () => _llamar(c.telefono),
                     icon: const Icon(Icons.phone, size: 20),
                     label: const Text('Llamar'),
                   ),
