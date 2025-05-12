@@ -16,6 +16,12 @@ class ClienteNuevoViewModel extends ChangeNotifier {
   int get currentStep => _currentStep;
   bool get isLoading => _isLoading;
 
+  /// Reinicia el stepper a 0
+  void resetStep() {
+    _currentStep = 0;
+    notifyListeners();
+  }
+
   void avanzarStep() {
     if (_currentStep < 1) {
       _currentStep++;
@@ -34,11 +40,13 @@ class ClienteNuevoViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // ← 1) Antes de llamar al repo
     debugPrint('🔔 [VM] Intentando crear cliente: ${cliente.toJson()}');
     final success = await _repo.crearCliente(cliente);
-    // ← 2) Después de la llamada
     debugPrint('🔔 [VM] Resultado crearCliente: $success');
+
+    if (success) {
+      resetStep(); // <— aquí, dentro del método
+    }
 
     _isLoading = false;
     notifyListeners();

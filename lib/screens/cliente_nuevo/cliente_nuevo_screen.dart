@@ -22,8 +22,35 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
   final _montoCtrl = TextEditingController();
   int? _plazoDias;
   DateTime _fechaPrimerPago = DateTime.now().add(const Duration(days: 1));
-
   int _totalPagar = 0, _cuotaDiaria = 0, _ultimaCuota = 0;
+
+  late final ClienteNuevoViewModel _vm;
+
+  /// Limpia todas las entradas y variables al estado inicial
+  void _resetForm() {
+    // Limpia validaciones
+    _formKeyCliente.currentState?.reset();
+    _formKeyPrestamo.currentState?.reset();
+    // Limpia texto
+    _nombreCtrl.clear();
+    _telefonoCtrl.clear();
+    _direccionCtrl.clear();
+    _negocioCtrl.clear();
+    _montoCtrl.clear();
+    // Reinicia variables
+    _plazoDias = null;
+    _fechaPrimerPago = DateTime.now().add(const Duration(days: 1));
+    _totalPagar = _cuotaDiaria = _ultimaCuota = 0;
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _vm = context.read<ClienteNuevoViewModel>();
+    _resetForm(); // ① Limpia UI
+    _vm.resetStep(); // ② Reinicia currentStep a 0
+  }
 
   void _recalcular() {
     final monto = int.tryParse(_montoCtrl.text) ?? 0;

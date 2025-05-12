@@ -38,9 +38,14 @@ class TarjetaClienteViewModel extends ChangeNotifier {
     return maxPagada + 1;
   }
 
-  /// 3) Solo podrás registrar pago si has seleccionado exactamente la cuota de hoy.
-  bool get canRegistrarHoy =>
-      !isCreditComplete && cuotaSeleccionada == cuotaHoy;
+  /// 3) Permite registrar pago si existe cuotaSeleccionada y no está ya pagada.
+  bool get canRegistrarHoy {
+    if (isCreditComplete || cuotaSeleccionada == null) return false;
+    // extraemos números ya pagados:
+    final pagadas = pagos.map((p) => p.numeroCuota);
+    // sólo habilita si la cuotaSeleccionada NO está en esa lista:
+    return !pagadas.contains(cuotaSeleccionada);
+  }
 
   /// 4) Montos formateados para la UI (si el crédito está completo, siempre 0)
   double get montoPrestadoDisplay =>

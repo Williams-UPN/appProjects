@@ -62,22 +62,34 @@ class CuotasGrid extends StatelessWidget {
 
         Color bg;
         Color border;
-        if (estaPag) {
+
+        // 1) Si aún no está pagada y justo es la seleccionada → VERDE
+        if (!estaPag && sel) {
+          bg = const Color.fromARGB(255, 111, 206, 112);
+          border = const Color.fromARGB(255, 15, 122, 18);
+        }
+        // 2) Si ya está pagada → GRIS
+        else if (estaPag) {
           bg = Colors.grey[300]!;
           border = Colors.transparent;
-        } else if (esHoy) {
+        }
+        // 3) “Hoy” → NARANJA
+        else if (esHoy) {
           bg = Colors.orange[100]!;
           border = Colors.orange;
-        } else if (esProx) {
+        }
+        // 4) Próxima futura → AZUL
+        else if (esProx) {
           bg = Colors.blue[100]!;
           border = Colors.blue;
-        } else if (vencida) {
+        }
+        // 5) Atrasada → ROJO
+        else if (vencida) {
           bg = Colors.red[100]!;
           border = Colors.red;
-        } else if (sel) {
-          bg = Colors.blue[100]!;
-          border = Colors.blue;
-        } else {
+        }
+        // 6) Cualquier otra futura no seleccionada → BLANCO
+        else {
           bg = Colors.white;
           border = Colors.grey;
         }
