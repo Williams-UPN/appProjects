@@ -127,6 +127,7 @@ class ClienteRepositoryImpl implements ClienteRepository {
       await _supabase.from('clientes').update({
         'monto_solicitado': nuevoMonto,
         'plazo_dias': plazoDias,
+        'saldo_pendiente': nuevoMonto,
       }).eq('id', clienteId);
 
       return true;

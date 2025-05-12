@@ -55,6 +55,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final pagos = vm.pagos.map((p) => p.numeroCuota).toList();
     final cronograma = vm.cronograma;
     final historiales = vm.historiales;
+    debugPrint('🔔 [UI] historiales.length = ${historiales.length}');
     final cuotaSeleccionada = vm.cuotaSeleccionada;
     final siguienteCuotaValida =
         pagos.isEmpty ? 1 : pagos.reduce((a, b) => a > b ? a : b) + 1;
@@ -129,7 +130,15 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       siguienteCuotaValida: siguienteCuotaValida,
                       fechaInicio: c.fechaPrimerPago,
                       onSeleccionar: (n) {
-                        vm.selectCuota(n);
+                        if (n <= siguienteCuotaValida) {
+                          vm.selectCuota(n);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text(
+                                    'Primero paga la cuota $siguienteCuotaValida')),
+                          );
+                        }
                       },
                     ),
                   )
@@ -158,12 +167,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                         label: const Text('Ubicación'),
                       ),
                       TextButton.icon(
-                        onPressed: () {
-                          final vm = context.read<TarjetaClienteViewModel>();
-                          vm.iniciarRefinanciamiento(); // ① resetea monto/plazo
-                          _showRefinanciarDialog(
-                              context); // ② dispara el diálogo
-                        },
+                        onPressed: vm.puedeIniciarRefinanciamiento
+                            ? () {
+                                vm.iniciarRefinanciamiento();
+                                _showRefinanciarDialog(context);
+                              }
+                            : null, // si no puede, queda deshabilitado
                         icon: const Icon(Icons.refresh, size: 20),
                         label: const Text('Refinanciar'),
                       ),
@@ -174,25 +183,19 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 // Ver historial
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: GestureDetector(
-                    onTap: vm.isCreditComplete && historiales.isNotEmpty
+                  child: TextButton.icon(
+                    onPressed: historiales.isNotEmpty
                         ? () => _showHistorialDialog(context, historiales)
                         : null,
-                    child: Opacity(
-                      opacity: vm.isCreditComplete ? 1.0 : 0.5,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.history, color: Colors.black54),
-                          SizedBox(width: 8),
-                          Text(
-                            'Ver Historial del Cliente',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                    icon: const Icon(Icons.history, color: Colors.black54),
+                    label: Text(
+                      'Ver Historial del Cliente',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: historiales.isNotEmpty
+                            ? Colors.black87
+                            : Colors.black38,
                       ),
                     ),
                   ),
@@ -313,7 +316,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
   void _showHistorialDialog(
       BuildContext context, List<HistorialRead> historiales) async {
-    // ① Sólo los últimos 5 (o menos si hay menos)
     final recientes = historiales.length <= 5
         ? historiales
         : historiales.sublist(historiales.length - 5);
@@ -321,159 +323,140 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final pageController = PageController();
     int currentPage = 0;
 
+    final maxHeight = MediaQuery.of(context).size.height * 0.5; // 50%
+    final pageViewHeight = maxHeight * 0.6; // 60% del diálogo
+
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            insetPadding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-            content: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.5,
-                minWidth: MediaQuery.of(context).size.width * 0.8,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        // insetPadding más grande para hacerlo más estrecho
+        insetPadding: const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: maxHeight,
+            minWidth: MediaQuery.of(context).size.width * 0.7, // 70% ancho
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Título centrado
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                child: Text(
+                  'HISTORIAL DE CRÉDITOS',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // — Título —
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'HISTORIAL DE CRÉDITOS',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
 
-                  const Divider(thickness: 1),
+              const Divider(height: 1),
 
-                  // — PageView —
-                  Expanded(
-                    child: PageView.builder(
-                      controller: pageController,
-                      scrollDirection: Axis.vertical,
-                      itemCount: recientes.length,
-                      onPageChanged: (idx) => setState(() {
-                        currentPage = idx;
-                      }),
-                      itemBuilder: (context, index) {
-                        final h = recientes[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _buildHistRow(
-                                label: 'Inicio:',
-                                value: _formatFecha(h.fechaInicio),
-                              ),
-                              _buildHistRow(
-                                label: 'Fin:',
-                                value: _formatFecha(h.fechaCierreReal),
-                              ),
-                              _buildHistRow(
-                                label: 'Monto solicitado:',
-                                value: 'S/${h.montoSolicitado}',
-                              ),
-                              _buildHistRow(
-                                label: 'Total pagado:',
-                                value: 'S/${h.totalPagado}',
-                              ),
-                              _buildHistRow(
-                                label: 'Días totales:',
-                                value: '${h.diasTotales}',
-                              ),
-                              _buildHistRow(
-                                label: 'Días de atraso:',
-                                value: '${h.diasAtrasoMax}',
-                              ),
-                            ],
-                          ),
+              // PageView con altura fija
+              SizedBox(
+                height: pageViewHeight,
+                child: PageView.builder(
+                  controller: pageController,
+                  scrollDirection: Axis.vertical,
+                  itemCount: recientes.length,
+                  onPageChanged: (idx) => setState(() {
+                    currentPage = idx;
+                  }),
+                  itemBuilder: (context, index) {
+                    final h = recientes[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildHistRow(
+                              label: 'Inicio:',
+                              value: _formatFecha(h.fechaInicio)),
+                          _buildHistRow(
+                              label: 'Fin:',
+                              value: _formatFecha(h.fechaCierreReal)),
+                          _buildHistRow(
+                              label: 'Monto solicitado:',
+                              value: 'S/${h.montoSolicitado}'),
+                          _buildHistRow(
+                              label: 'Total pagado:',
+                              value: 'S/${h.totalPagado}'),
+                          _buildHistRow(
+                              label: 'Días totales:',
+                              value: '${h.diasTotales}'),
+                          _buildHistRow(
+                              label: 'Días de atraso:',
+                              value: '${h.diasAtrasoMax}'),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              const Divider(height: 1),
+
+              // Dots de paginación
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(recientes.length, (i) {
+                    final isActive = i == currentPage;
+                    return GestureDetector(
+                      onTap: () {
+                        pageController.animateToPage(
+                          i,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
                         );
+                        setState(() {
+                          currentPage = i;
+                        });
                       },
-                    ),
-                  ),
-
-                  const Divider(thickness: 1),
-
-                  // — Dots de paginación clicables —
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(recientes.length, (i) {
-                        final isActive = i == currentPage;
-                        return GestureDetector(
-                          onTap: () {
-                            pageController.animateToPage(
-                              i,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                            setState(() {
-                              currentPage = i;
-                            });
-                          },
-                          child: Container(
-                            width: 48,
-                            height: 48,
-                            alignment: Alignment.center,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            child: Container(
-                              width: isActive ? 12 : 8,
-                              height: isActive ? 12 : 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isActive
-                                    ? Colors.blueAccent
-                                    : Colors.grey[300],
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-
-                  // — Botón Cerrar siempre visible —
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: TextButton(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          backgroundColor: const Color(0xFF90CAF9),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          'Cerrar',
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      child: Container(
+                        width: isActive ? 14 : 10,
+                        height: isActive ? 14 : 10,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color:
+                              isActive ? Colors.blueAccent : Colors.grey[300],
                         ),
                       ),
+                    );
+                  }),
+                ),
+              ),
+
+              // Botón Cerrar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: const Color(0xFF90CAF9),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'Cerrar',
+                      style: TextStyle(
+                          color: Colors.black, fontWeight: FontWeight.w600),
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-          );
-        },
+            ],
+          ),
+        ),
       ),
     );
   }

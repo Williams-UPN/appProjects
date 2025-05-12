@@ -45,6 +45,9 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   /// 1) Estado de crédito completo
   bool get isCreditComplete => _cliente?.estadoReal == 'completo';
 
+  bool get puedeIniciarRefinanciamiento =>
+      !isCreditComplete && _cliente != null;
+
   /// 2) Calcula cuál es la cuota “de hoy” (la siguiente no pagada).
   int get cuotaHoy {
     final pagadas = pagos.map((p) => p.numeroCuota);
