@@ -1,15 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.proyecto">
 
-    <!-- Permiso para realizar llamadas telefónicas (si en algún punto usas CALL_PHONE) -->
     <uses-permission android:name="android.permission.CALL_PHONE"/>
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+        </intent>
+        <!-- Si llegaras a usar CALL directamente:
+        <intent>
+            <action android:name="android.intent.action.CALL"/>
+        </intent>
+        -->
+    </queries>
 
     <application
         android:label="proyecto"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
 
-        <!-- Tu Activity principal (launcher normal) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -19,7 +28,6 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode">
 
-            <!-- Ícono en el launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -30,7 +38,6 @@
                 android:resource="@style/NormalTheme"/>
         </activity>
 
-        <!-- Metadata de Flutter embedding 2 -->
         <meta-data android:name="flutterEmbedding" android:value="2"/>
     </application>
 </manifest>

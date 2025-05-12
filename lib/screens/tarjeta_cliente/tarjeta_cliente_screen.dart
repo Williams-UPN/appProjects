@@ -175,7 +175,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
             Expanded(
               child: CuotasGrid(
                 dias: c.plazoDias,
-                cuotasPagadas: pagos,
+                cronograma: cronograma, // ← lista de CronogramaRead
                 cuotaSeleccionada: cuotaSeleccionada,
                 siguienteCuotaValida: siguienteCuotaValida,
                 fechaInicio: c.fechaPrimerPago,
@@ -191,11 +191,10 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     );
                     return;
                   }
-                  vm.selectCuota(n);
+                  _vm.selectCuota(n);
                 },
               ),
             ),
-
             // Botones estáticos: Llamar, Ubicación, Refinanciar
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),

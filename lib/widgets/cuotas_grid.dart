@@ -1,11 +1,11 @@
-// lib/widgets/cuotas_grid.dart
-
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../models/cronograma_read.dart';
 
-/// Grid de botones para cada cuota
+/// Grid de botones para cada cuota, ahora mostrando solo día y mes
 class CuotasGrid extends StatelessWidget {
   final int dias;
-  final List<int> cuotasPagadas;
+  final List<CronogramaRead> cronograma;
   final int? cuotaSeleccionada;
   final int siguienteCuotaValida;
   final DateTime fechaInicio;
@@ -14,7 +14,7 @@ class CuotasGrid extends StatelessWidget {
   const CuotasGrid({
     super.key,
     required this.dias,
-    required this.cuotasPagadas,
+    required this.cronograma,
     required this.cuotaSeleccionada,
     required this.siguienteCuotaValida,
     required this.fechaInicio,
@@ -29,6 +29,7 @@ class CuotasGrid extends StatelessWidget {
 
     return GridView.builder(
       padding: EdgeInsets.zero,
+      shrinkWrap: true, // ← Nuevo
       physics: const NeverScrollableScrollPhysics(),
       itemCount: dias,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -45,7 +46,15 @@ class CuotasGrid extends StatelessWidget {
           fechaInicio.day + idx,
         );
 
-        final estaPag = cuotasPagadas.contains(numCuota);
+        final pago = cronograma.firstWhere(
+          (c) => c.numeroCuota == numCuota,
+          orElse: () => CronogramaRead(
+            numeroCuota: numCuota,
+            montoCuota: 0,
+            fechaPagado: null,
+          ),
+        );
+        final estaPag = pago.fechaPagado != null;
         final sel = cuotaSeleccionada == numCuota;
         final esHoy = dueDate == today;
         final esProx = numCuota == 1 && fechaInicio.isAfter(today) && !estaPag;
@@ -82,7 +91,18 @@ class CuotasGrid extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
             ),
             child: estaPag
-                ? const Icon(Icons.check, color: Colors.deepPurple)
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.check, color: Colors.deepPurple),
+                      const SizedBox(height: 4),
+                      Text(
+                        // Solo día y mes:
+                        DateFormat('dd/MM').format(pago.fechaPagado!),
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                    ],
+                  )
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
