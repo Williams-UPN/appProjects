@@ -16,7 +16,7 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   ClienteDetailRead? _cliente;
   List<PagoRead> _pagos = [];
   List<CronogramaRead> _cronograma = [];
-  HistorialRead? _historial;
+  List<HistorialRead> _historiales = [];
   int? _cuotaSeleccionada;
 
   // Getters básicos
@@ -24,7 +24,7 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   ClienteDetailRead? get cliente => _cliente;
   List<PagoRead> get pagos => List.unmodifiable(_pagos);
   List<CronogramaRead> get cronograma => List.unmodifiable(_cronograma);
-  HistorialRead? get historial => _historial;
+  List<HistorialRead> get historiales => List.unmodifiable(_historiales);
   int? get cuotaSeleccionada => _cuotaSeleccionada;
 
   /// 1) Estado de crédito completo
@@ -119,7 +119,7 @@ class TarjetaClienteViewModel extends ChangeNotifier {
       _cliente = await _repo.getClienteById(clienteId);
       _pagos = await _repo.getPagos(clienteId);
       _cronograma = await _repo.getCronograma(clienteId);
-      _historial = await _repo.getHistorial(clienteId);
+      _historiales = await _repo.getHistoriales(clienteId);
       _cuotaSeleccionada = null;
     } catch (e) {
       debugPrint('🔴 [VM] Error en loadData: $e');

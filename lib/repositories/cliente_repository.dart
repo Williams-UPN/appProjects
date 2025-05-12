@@ -23,7 +23,7 @@ abstract class ClienteRepository {
   Future<ClienteDetailRead> getClienteById(int id);
   Future<List<PagoRead>> getPagos(int clienteId);
   Future<List<CronogramaRead>> getCronograma(int clienteId);
-  Future<HistorialRead?> getHistorial(int clienteId);
+  Future<List<HistorialRead>> getHistoriales(int clienteId);
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
   Future<bool> registrarEvento(int clienteId, String descripcion);
 }
@@ -80,8 +80,13 @@ class ClienteRepositoryImpl implements ClienteRepository {
       _ds.fetchCronograma(clienteId);
 
   @override
-  Future<HistorialRead?> getHistorial(int clienteId) =>
-      _ds.fetchHistorial(clienteId);
+  Future<List<HistorialRead>> getHistoriales(int clienteId) async {
+    debugPrint('🔔 [Repo] getHistoriales: clienteId=$clienteId');
+    final historiales = await _ds.fetchHistoriales(clienteId);
+    debugPrint(
+        '🔔 [Repo] fetchHistoriales devolvió ${historiales.length} registros');
+    return historiales;
+  }
 
   @override
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto) async {
@@ -94,15 +99,10 @@ class ClienteRepositoryImpl implements ClienteRepository {
 
   @override
   Future<bool> registrarEvento(int clienteId, String descripcion) async {
-    try {
-      await _supabase.from('historial_eventos').insert({
-        'cliente_id': clienteId,
-        'descripcion': descripcion,
-      });
-      return true;
-    } catch (e) {
-      debugPrint('🔴 [Repo] Error registrarEvento: $e');
-      return false;
-    }
+    debugPrint(
+        '🔔 [Repo] registrarEvento: clienteId=$clienteId, descripcion="$descripcion"');
+    final success = await _ds.registrarEvento(clienteId, descripcion);
+    debugPrint('🔔 [Repo] _ds.registrarEvento devolvió: $success');
+    return success;
   }
 }

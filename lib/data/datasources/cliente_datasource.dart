@@ -20,7 +20,7 @@ abstract class ClienteDatasource {
   Future<ClienteDetailRead> fetchClienteById(int id);
   Future<List<PagoRead>> fetchPagos(int clienteId);
   Future<List<CronogramaRead>> fetchCronograma(int clienteId);
-  Future<HistorialRead?> fetchHistorial(int clienteId);
+  Future<List<HistorialRead>> fetchHistoriales(int clienteId);
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
   Future<bool> registrarEvento(int clienteId, String descripcion);
 }
@@ -130,16 +130,20 @@ class SupabaseClienteDatasource implements ClienteDatasource {
   }
 
   @override
-  Future<HistorialRead?> fetchHistorial(int clienteId) async {
+  Future<List<HistorialRead>> fetchHistoriales(int clienteId) async {
+    // 1) Apunta a la vista corregida, que ya expone
+    //    los campos que tu modelo espera, y con nombres exactos:
     final raw = await _supabase
         .from('v_cliente_historial_completo')
-        .select(
-          'fecha_inicio, fecha_cierre_real, monto_solicitado, '
-          'total_pagado, dias_totales, dias_atraso_max',
-        )
+        .select('fecha_inicio, fecha_cierre_real, monto_solicitado, '
+            'total_pagado, dias_totales, dias_atraso_max')
         .eq('cliente_id', clienteId)
-        .maybeSingle();
-    return raw == null ? null : HistorialRead.fromMap(raw);
+        .order('fecha_cierre_real', ascending: true);
+
+    // 2) Mapea a tu modelo sin riesgo de null mismatch
+    return (raw as List)
+        .map((m) => HistorialRead.fromMap(m as Map<String, dynamic>))
+        .toList();
   }
 
   @override

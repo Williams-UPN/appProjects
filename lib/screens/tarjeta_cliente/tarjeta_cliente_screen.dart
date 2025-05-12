@@ -54,7 +54,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final ClienteDetailRead c = vm.cliente!;
     final pagos = vm.pagos.map((p) => p.numeroCuota).toList();
     final cronograma = vm.cronograma;
-    final historial = vm.historial;
+    final historiales = vm.historiales;
     final cuotaSeleccionada = vm.cuotaSeleccionada;
     final siguienteCuotaValida =
         pagos.isEmpty ? 1 : pagos.reduce((a, b) => a > b ? a : b) + 1;
@@ -170,12 +170,8 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: GestureDetector(
-                    onTap: vm.isCreditComplete
-                        ? () {
-                            if (historial != null) {
-                              _showHistorialDialog(context, historial);
-                            }
-                          }
+                    onTap: vm.isCreditComplete && historiales.isNotEmpty
+                        ? () => _showHistorialDialog(context, historiales)
                         : null,
                     child: Opacity(
                       opacity: vm.isCreditComplete ? 1.0 : 0.5,
@@ -310,80 +306,187 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     return false;
   }
 
-  void _showHistorialDialog(BuildContext context, HistorialRead h) {
+  void _showHistorialDialog(
+      BuildContext context, List<HistorialRead> historiales) {
+    // Controller para el PageView y estado interno para el dot activo
+    final pageController = PageController();
+    int currentPage = 0;
+
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'HISTORIAL DE PAGO',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                textAlign: TextAlign.center,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setState) {
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.5,
+                minWidth: MediaQuery.of(context).size.width * 0.8,
               ),
-              const SizedBox(height: 12),
-              const Divider(thickness: 1),
-              const SizedBox(height: 12),
-              _buildHistRow(
-                  label: 'Inicio:', value: _formatFecha(h.fechaInicio)),
-              _buildHistRow(
-                  label: 'Fin:', value: _formatFecha(h.fechaCierreReal)),
-              _buildHistRow(
-                  label: 'Monto solicitado:', value: 'S/${h.montoSolicitado}'),
-              _buildHistRow(
-                  label: 'Total pagado:', value: 'S/${h.totalPagado}'),
-              _buildHistRow(label: 'Días totales:', value: '${h.diasTotales}'),
-              _buildHistRow(
-                  label: 'Días de atraso:', value: '${h.diasAtrasoMax}'),
-              const SizedBox(height: 16),
-              const Divider(thickness: 1),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 40,
-                child: TextButton(
-                  style: TextButton.styleFrom(
-                    backgroundColor: const Color(0xFF90CAF9),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // — Título —
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'HISTORIAL DE CRÉDITOS',
+                      style:
+                          TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    'Cerrar',
-                    style: TextStyle(
-                        color: Colors.black, fontWeight: FontWeight.w600),
+
+                  const Divider(thickness: 1),
+
+                  // — PageView —
+                  Expanded(
+                    child: PageView.builder(
+                      controller: pageController,
+                      scrollDirection: Axis.vertical,
+                      itemCount: historiales.length,
+                      onPageChanged: (idx) => setState(() {
+                        currentPage = idx;
+                      }),
+                      itemBuilder: (context, index) {
+                        final h = historiales[index];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildHistRow(
+                                label: 'Inicio:',
+                                value: _formatFecha(h.fechaInicio),
+                              ),
+                              _buildHistRow(
+                                label: 'Fin:',
+                                value: _formatFecha(h.fechaCierreReal),
+                              ),
+                              _buildHistRow(
+                                label: 'Monto solicitado:',
+                                value: 'S/${h.montoSolicitado}',
+                              ),
+                              _buildHistRow(
+                                label: 'Total pagado:',
+                                value: 'S/${h.totalPagado}',
+                              ),
+                              _buildHistRow(
+                                label: 'Días totales:',
+                                value: '${h.diasTotales}',
+                              ),
+                              _buildHistRow(
+                                label: 'Días de atraso:',
+                                value: '${h.diasAtrasoMax}',
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
+
+                  const Divider(thickness: 1),
+
+                  // — Dots de paginación clicables —
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(historiales.length, (i) {
+                        final isActive = i == currentPage;
+                        return GestureDetector(
+                          onTap: () {
+                            pageController.animateToPage(
+                              i,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                            );
+                            setState(() {
+                              currentPage = i;
+                            });
+                          },
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            alignment: Alignment.center,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Container(
+                              width: isActive ? 12 : 8,
+                              height: isActive ? 12 : 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isActive
+                                    ? Colors.blueAccent
+                                    : Colors.grey[300],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+
+                  // — Botón Cerrar siempre visible —
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          backgroundColor: const Color(0xFF90CAF9),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          'Cerrar',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildHistRow({required String label, required String value}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 4), // antes 6
       child: Row(
         children: [
           Expanded(
             flex: 4,
             child: Text(label,
-                style: const TextStyle(fontWeight: FontWeight.w500)),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14)), // sube un poco la fuente si quieres
           ),
           Expanded(
             flex: 6,
             child: Text(value,
                 textAlign: TextAlign.right,
-                style: const TextStyle(fontWeight: FontWeight.w400)),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w400, fontSize: 14)),
           )
         ],
       ),
