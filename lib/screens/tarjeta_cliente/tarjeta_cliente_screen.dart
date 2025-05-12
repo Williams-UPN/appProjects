@@ -158,7 +158,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                         label: const Text('Ubicación'),
                       ),
                       TextButton.icon(
-                        onPressed: () {},
+                        onPressed: () {
+                          final vm = context.read<TarjetaClienteViewModel>();
+                          vm.iniciarRefinanciamiento(); // ① resetea monto/plazo
+                          _showRefinanciarDialog(
+                              context); // ② dispara el diálogo
+                        },
                         icon: const Icon(Icons.refresh, size: 20),
                         label: const Text('Refinanciar'),
                       ),
@@ -318,17 +323,17 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
     await showDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       builder: (_) => StatefulBuilder(
         builder: (context, setState) {
-          return Dialog(
+          return AlertDialog(
             backgroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
             insetPadding:
                 const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-            child: ConstrainedBox(
+            content: ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.5,
                 minWidth: MediaQuery.of(context).size.width * 0.8,
@@ -470,6 +475,124 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
           );
         },
       ),
+    );
+  }
+
+  Future<void> _showRefinanciarDialog(BuildContext context) async {
+    final vm = context.read<TarjetaClienteViewModel>();
+    vm.iniciarRefinanciamiento();
+
+    // ① Capturamos el messenger de la pantalla **antes** de abrir el diálogo
+    final messenger = ScaffoldMessenger.of(context);
+
+    double montoNuevo = 0;
+    int plazoOriginal = vm.plazoRefinanciar;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setState) {
+            return AlertDialog(
+              title: const Text('Refinanciar Préstamo'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 1) Saldo pendiente actual
+                  Row(
+                    children: [
+                      const Text('Saldo pendiente: '),
+                      Text('S/${vm.saldoPendienteDisplay.toStringAsFixed(2)}'),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // 2) Mostrar los nuevos montos (si hay montoAdicional)
+                  if (vm.montoAdicional > 0) ...[
+                    Row(
+                      children: [
+                        const Text('Nuevo monto prestado: '),
+                        Text(
+                            'S/${vm.nuevoMontoPrestadoDisplay.toStringAsFixed(2)}'),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Text('Nuevo saldo pendiente: '),
+                        Text(
+                            'S/${vm.nuevoSaldoPendienteDisplay.toStringAsFixed(2)}'),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Text('Nueva cuota diaria: '),
+                        Text(
+                            'S/${vm.nuevaCuotaDiariaDisplay.toStringAsFixed(2)}'),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // 3) Plazo (fijo, deshabilitado)
+                  InputDecorator(
+                    decoration:
+                        const InputDecoration(labelText: 'Plazo (días)'),
+                    child: Text('$plazoOriginal días'),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // 4) Monto a solicitar
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Monto a solicitar',
+                      prefixText: 'S/ ',
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) {
+                      montoNuevo = double.tryParse(v) ?? 0;
+                      vm.setMontoAdicional(montoNuevo);
+                      setState(() {}); // fuerza rebuild del diálogo
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: montoNuevo > 0
+                      ? () async {
+                          // ② Cerramos el diálogo con su propio context
+                          Navigator.of(dialogContext).pop();
+                          // ③ Esperamos el refinanciamiento
+                          final ok = await vm.confirmarRefinanciamiento(
+                            montoNuevo,
+                            plazoOriginal,
+                          );
+                          // ④ Mostramos el SnackBar con el messenger capturado
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                ok
+                                    ? 'Refinanciamiento exitoso'
+                                    : 'Error al refinanciar',
+                              ),
+                            ),
+                          );
+                        }
+                      : null,
+                  child: const Text('Confirmar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

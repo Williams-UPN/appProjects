@@ -19,6 +19,12 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   List<HistorialRead> _historiales = [];
   int? _cuotaSeleccionada;
 
+  double _montoAdicional = 0.0;
+  int _plazoRefinanciar = 0;
+  double _nuevoMontoPrestado = 0.0;
+  double _nuevoSaldoPendiente = 0.0;
+  double _nuevaCuotaDiaria = 0.0;
+
   // Getters básicos
   bool get isLoading => _isLoading;
   ClienteDetailRead? get cliente => _cliente;
@@ -26,6 +32,15 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   List<CronogramaRead> get cronograma => List.unmodifiable(_cronograma);
   List<HistorialRead> get historiales => List.unmodifiable(_historiales);
   int? get cuotaSeleccionada => _cuotaSeleccionada;
+
+// Getters para refinanciamiento (insertar justo después de los getters básicos):
+  double get montoAdicional => _montoAdicional;
+  int get plazoRefinanciar => _plazoRefinanciar;
+  bool get puedeRefinanciar =>
+      _montoAdicional > 0 && !_isLoading && _cliente != null;
+  double get nuevoMontoPrestadoDisplay => _nuevoMontoPrestado;
+  double get nuevoSaldoPendienteDisplay => _nuevoSaldoPendiente;
+  double get nuevaCuotaDiariaDisplay => _nuevaCuotaDiaria;
 
   /// 1) Estado de crédito completo
   bool get isCreditComplete => _cliente?.estadoReal == 'completo';
@@ -157,5 +172,69 @@ class TarjetaClienteViewModel extends ChangeNotifier {
     final ok = await _repo.registrarEvento(_cliente!.id, descripcion);
     debugPrint('🔔 [VM] resultado registrarEvento: $ok');
     return ok;
+  }
+
+  /// 1) Método para resetear antes de abrir el diálogo:
+  void iniciarRefinanciamiento() {
+    // 1) Monto que ingresa el usuario
+    _montoAdicional = 0.0;
+
+    // 2) El plazo original (12 o 24)
+    _plazoRefinanciar = _cliente?.plazoDias ?? 12;
+
+    // 3) Valores “base” para mostrar antes de teclear nada:
+    _nuevoMontoPrestado = 0.0;
+    _nuevoSaldoPendiente = 0.0;
+    _nuevaCuotaDiaria = 0.0;
+
+    notifyListeners();
+  }
+
+  // 2) Método principal de refinanciamiento:
+  Future<bool> confirmarRefinanciamiento(double monto, int plazo) async {
+    if (_cliente == null) return false;
+    _isLoading = true;
+    notifyListeners();
+
+    // 1) Llamada a repo (dispara triggers en la BD)
+    final ok = await _repo.refinanciar(_cliente!.id, monto, plazo);
+
+    if (ok) {
+      // 2) Guarda evento en historial
+      await registrarEvento(
+          'Refinanciamiento: +S/${monto.toStringAsFixed(2)} a $plazo días');
+      // 3) Recarga datos desde cero
+      await loadData(_cliente!.id);
+    }
+
+    _isLoading = false;
+    notifyListeners();
+    return ok;
+  }
+
+  // ─────────────────────────────────────────────────────
+  // 3) Setters para capturar la entrada del usuario en el diálogo:
+  void setMontoAdicional(double monto) {
+    _montoAdicional = monto;
+
+    // 1) Base: saldo pendiente actual
+    final base = _cliente?.saldoPendiente.toDouble() ?? 0.0;
+
+    // 2) Nuevo monto prestado = base + monto adicional
+    _nuevoMontoPrestado = base + monto;
+
+    // 3) Nuevo saldo pendiente = mismo que el nuevo monto prestado
+    _nuevoSaldoPendiente = _nuevoMontoPrestado;
+
+    // 4) Nueva cuota diaria = ceil(nuevoSaldo / plazo original)
+    final plazo = _cliente?.plazoDias.toDouble() ?? 12.0;
+    _nuevaCuotaDiaria = (_nuevoSaldoPendiente / plazo).ceilToDouble();
+
+    notifyListeners();
+  }
+
+  void setPlazoRefinanciar(int plazo) {
+    _plazoRefinanciar = plazo;
+    notifyListeners();
   }
 }

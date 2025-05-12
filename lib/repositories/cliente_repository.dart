@@ -26,6 +26,7 @@ abstract class ClienteRepository {
   Future<List<HistorialRead>> getHistoriales(int clienteId);
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
   Future<bool> registrarEvento(int clienteId, String descripcion);
+  Future<bool> refinanciar(int clienteId, double montoAdicional, int plazoDias);
 }
 
 class ClienteRepositoryImpl implements ClienteRepository {
@@ -104,5 +105,34 @@ class ClienteRepositoryImpl implements ClienteRepository {
     final success = await _ds.registrarEvento(clienteId, descripcion);
     debugPrint('🔔 [Repo] _ds.registrarEvento devolvió: $success');
     return success;
+  }
+
+  @override
+  Future<bool> refinanciar(
+      int clienteId, double montoAdicional, int plazoDias) async {
+    try {
+      // 1) Leemos el saldo pendiente actual como un Map
+      final Map<String, dynamic> record = await _supabase
+          .from('clientes')
+          .select('saldo_pendiente')
+          .eq('id', clienteId)
+          .single(); // devuelve directamente el registro o lanza error
+
+      final currentSaldo = (record['saldo_pendiente'] as num).toDouble();
+
+      // 2) Calculamos el nuevo monto_solicitado
+      final nuevoMonto = currentSaldo + montoAdicional;
+
+      // 3) Hacemos el update (lanza excepción si falla)
+      await _supabase.from('clientes').update({
+        'monto_solicitado': nuevoMonto,
+        'plazo_dias': plazoDias,
+      }).eq('id', clienteId);
+
+      return true;
+    } catch (e) {
+      debugPrint('❌ [Repo] refinanciar ERROR: $e');
+      return false;
+    }
   }
 }
