@@ -235,14 +235,23 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
               child: ElevatedButton(
                 onPressed: cuotaSeleccionada == siguienteCuotaValida
                     ? () async {
+                        debugPrint('🔔 [UI] Botón “Registrar pago” pulsado');
+
                         final obs = await _showConfirmDialog(
-                            context, displayCuota, cuotaSeleccionada!);
-                        if (obs != null) {
-                          if (obs.isNotEmpty) {
-                            await vm.registrarEvento(obs);
-                          }
-                          await vm.registrarPago();
+                          context,
+                          displayCuota,
+                          cuotaSeleccionada!,
+                        );
+                        debugPrint('🔔 [UI] _showConfirmDialog devolvió: $obs');
+
+                        // 1) Si hay texto, registra evento
+                        if (obs != null && obs.isNotEmpty) {
+                          await vm.registrarEvento(obs);
                         }
+
+                        // 2) Siempre registra el pago, aunque obs sea null o vacío
+                        debugPrint('🔔 [UI] Llamando a vm.registrarPago()');
+                        await vm.registrarPago();
                       }
                     : null,
                 style: ElevatedButton.styleFrom(
@@ -327,7 +336,13 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         ),
       ),
     );
-    return confirmed == true ? obs : null;
+    if (confirmed == true) {
+      debugPrint('🔍 [UI] Diálogo confirmado → observaciones="$obs"');
+      return obs;
+    } else {
+      debugPrint('🔍 [UI] Diálogo cancelado o no confirmado');
+      return null;
+    }
   }
 
   // Diálogo de historial completo
