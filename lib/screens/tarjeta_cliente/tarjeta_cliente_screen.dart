@@ -22,6 +22,8 @@ class TarjetaClienteScreen extends StatefulWidget {
 class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   late final TarjetaClienteViewModel _vm;
 
+  String? _lastObservaciones;
+
   @override
   void initState() {
     super.initState();
@@ -251,6 +253,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
             ),
 
             // Botón Registrar pago
+            // Dentro de tu build(), en lugar del ElevatedButton original:
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -258,19 +261,28 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     ? () async {
                         debugPrint('🔔 [UI] Botón “Registrar pago” pulsado');
 
-                        final obs = await _showConfirmDialog(
+                        // 1) Abrimos el diálogo y esperamos un bool
+                        final confirmed = await _showConfirmDialog(
                           context,
                           displayCuota,
                           cuotaSeleccionada!,
                         );
-                        debugPrint('🔔 [UI] _showConfirmDialog devolvió: $obs');
+                        debugPrint(
+                            '🔔 [UI] _showConfirmDialog devolvió: $confirmed');
 
-                        // 1) Si hay texto, registra evento
+                        // 2) Si no confirmó, salimos sin hacer nada
+                        if (confirmed != true) {
+                          debugPrint('🔔 [UI] Pago cancelado por el usuario');
+                          return;
+                        }
+
+                        // 3) Si hay observaciones, las obtenemos
+                        final obs = _lastObservaciones;
                         if (obs != null && obs.isNotEmpty) {
                           await vm.registrarEvento(obs);
                         }
 
-                        // 2) Siempre registra el pago, aunque obs sea null o vacío
+                        // 4) Finalmente, sí registramos el pago
                         debugPrint('🔔 [UI] Llamando a vm.registrarPago()');
                         await vm.registrarPago();
                       }
@@ -292,10 +304,9 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     );
   }
 
-  // Diálogo de confirmación de pago
-  Future<String?> _showConfirmDialog(
+  Future<bool> _showConfirmDialog(
       BuildContext context, num monto, int cuota) async {
-    String? obs;
+    String? obsLocal;
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -325,15 +336,15 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 child: TextField(
                   minLines: 1,
                   maxLines: 5,
-                  onChanged: (t) => obs = t.trim().isEmpty ? null : t.trim(),
+                  onChanged: (t) =>
+                      obsLocal = t.trim().isEmpty ? null : t.trim(),
                   decoration: InputDecoration(
                     hintText: 'Observaciones (opcional)',
                     isDense: true,
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
@@ -342,14 +353,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancelar'),
-                  ),
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancelar')),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Confirmar'),
-                  ),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Confirmar')),
                 ],
               ),
             ],
@@ -357,12 +366,16 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         ),
       ),
     );
+
+    // Guardamos la observación sólo si confirmó
     if (confirmed == true) {
-      debugPrint('🔍 [UI] Diálogo confirmado → observaciones="$obs"');
-      return obs;
+      _lastObservaciones = obsLocal;
+      debugPrint(
+          '🔍 [UI] Diálogo confirmado → observaciones="$_lastObservaciones"');
+      return true;
     } else {
       debugPrint('🔍 [UI] Diálogo cancelado o no confirmado');
-      return null;
+      return false;
     }
   }
 
