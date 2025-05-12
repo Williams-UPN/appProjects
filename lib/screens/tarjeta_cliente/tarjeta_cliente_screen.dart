@@ -307,12 +307,16 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   }
 
   void _showHistorialDialog(
-      BuildContext context, List<HistorialRead> historiales) {
-    // Controller para el PageView y estado interno para el dot activo
+      BuildContext context, List<HistorialRead> historiales) async {
+    // ① Sólo los últimos 5 (o menos si hay menos)
+    final recientes = historiales.length <= 5
+        ? historiales
+        : historiales.sublist(historiales.length - 5);
+
     final pageController = PageController();
     int currentPage = 0;
 
-    showDialog(
+    await showDialog(
       context: context,
       barrierDismissible: true,
       builder: (_) => StatefulBuilder(
@@ -350,12 +354,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     child: PageView.builder(
                       controller: pageController,
                       scrollDirection: Axis.vertical,
-                      itemCount: historiales.length,
+                      itemCount: recientes.length,
                       onPageChanged: (idx) => setState(() {
                         currentPage = idx;
                       }),
                       itemBuilder: (context, index) {
-                        final h = historiales[index];
+                        final h = recientes[index];
                         return Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -402,7 +406,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(historiales.length, (i) {
+                      children: List.generate(recientes.length, (i) {
                         final isActive = i == currentPage;
                         return GestureDetector(
                           onTap: () {
