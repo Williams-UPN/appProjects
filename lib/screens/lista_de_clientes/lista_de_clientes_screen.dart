@@ -116,53 +116,54 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Lista de Clientes')),
-      body: Consumer<ListaClientesViewModel>(
-        builder: (context, vm, _) {
-          if (vm.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final list = vm.filteredClientes;
-
-          return Column(
-            children: [
-              // Barra de búsqueda redondeada
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: TextField(
-                  controller: _searchCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'Buscar cliente…',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchTerm.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () {
-                              _searchCtrl.clear();
-                              setState(() => _searchTerm = '');
-                              vm.updateSearch('');
-                            },
-                            child: const Icon(Icons.close),
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  ),
-                  onChanged: (v) {
-                    _searchTerm = v.toLowerCase();
-                    vm.updateSearch(_searchTerm);
-                  },
+      body: Column(
+        children: [
+          // Barra de búsqueda — sin cambios
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Buscar cliente…',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchTerm.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchTerm = '');
+                          context
+                              .read<ListaClientesViewModel>()
+                              .updateSearch('');
+                        },
+                        child: const Icon(Icons.close),
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
                 ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
               ),
+              onChanged: (v) {
+                _searchTerm = v.toLowerCase();
+                context
+                    .read<ListaClientesViewModel>()
+                    .updateSearch(_searchTerm);
+              },
+            ),
+          ),
 
-              // Listado con paginación
-              Expanded(
-                child: ListView.builder(
+          // Listado con paginación: envuelto en Consumer muy acotado
+          Expanded(
+            child: Consumer<ListaClientesViewModel>(
+              builder: (_, vm, __) {
+                if (vm.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final list = vm.filteredClientes;
+                return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: list.length + (vm.isLoadingMore ? 1 : 0),
@@ -183,25 +184,35 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                         isNew ? Colors.grey : _colorParaScore(score);
 
                     return Card(
-                      // ───── FONDO PASTEL-AZUL ─────
                       color: Colors.blue.shade50,
-                      // Ajusta aquí el tono: .shade25, .shade100, etc.
                       margin: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
-                      elevation: 4, // tu sombra original
+                      elevation: 4,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: ListTile(
-                        onTap: () async {
-                          await Navigator.push(
+                        onTap: () {
+                          // 1) Capturo VM y controller ANTES de navegar
+                          final vmLocal =
+                              context.read<ListaClientesViewModel>();
+                          final controller = _searchCtrl;
+
+                          // 2) Navego y, cuando se haga pop, en el .then() recargo
+                          Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
                                   TarjetaClienteScreen(clienteId: c.id),
                             ),
-                          );
-                          vm.loadInitial();
+                          ).then((_) {
+                            // a) Limpio la barra de búsqueda
+                            controller.clear();
+                            setState(() => _searchTerm = '');
+
+                            // b) Fuerzo recarga completa de la lista (página 0)
+                            vmLocal.loadInitial();
+                          });
                         },
                         title: Row(
                           children: [
@@ -212,7 +223,6 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                     fontWeight: FontWeight.bold),
                               ),
                             ),
-                            // Estrellas con relieve
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: List.generate(5, (i) {
@@ -228,7 +238,6 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // Panel izquierdo: datos
                               Expanded(
                                 flex: 2,
                                 child: Column(
@@ -240,7 +249,6 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                   ],
                                 ),
                               ),
-                              // Panel derecho: etiqueta + chip
                               Expanded(
                                 flex: 1,
                                 child: Column(
@@ -251,7 +259,9 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                                     Text(
                                       label,
                                       style: TextStyle(
-                                          color: categoryColor, fontSize: 12),
+                                        color: categoryColor,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                     _buildStatusChip(c.estadoReal),
                                   ],
@@ -264,11 +274,11 @@ class _ListaDeClientesScreenState extends State<ListaDeClientesScreen> {
                       ),
                     );
                   },
-                ),
-              ),
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

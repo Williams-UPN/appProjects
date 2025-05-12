@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../viewmodels/clientes_pendientes_viewmodel.dart';
 import '../tarjeta_cliente/tarjeta_cliente_screen.dart';
 import '../../widgets/relief_star.dart';
@@ -21,7 +22,6 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
   @override
   void initState() {
     super.initState();
-    // Ya está cargando en el ViewModel desde su constructor
     _scrollController = ScrollController()
       ..addListener(() {
         final vm = context.read<ClientesPendientesViewModel>();
@@ -111,44 +111,48 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Clientes Atrasados')),
-      body: Consumer<ClientesPendientesViewModel>(
-        builder: (ctx, vm, _) {
-          if (vm.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final list = vm.filteredClientes;
-          return Column(
-            children: [
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: TextField(
-                  controller: _searchCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'Buscar cliente…',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchTerm.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () {
-                              _searchCtrl.clear();
-                              setState(() => _searchTerm = '');
-                              vm.updateSearch('');
-                            },
-                            child: const Icon(Icons.close),
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  ),
+      body: Column(
+        children: [
+          // Barra de búsqueda — sin cambios en estilo ni lógica
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Buscar cliente…',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchTerm.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchTerm = '');
+                          context
+                              .read<ClientesPendientesViewModel>()
+                              .updateSearch('');
+                        },
+                        child: const Icon(Icons.close),
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
                 ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
               ),
-              Expanded(
-                child: ListView.builder(
+            ),
+          ),
+
+          // Listado de pendientes: Consumer acotado solo al ListView
+          Expanded(
+            child: Consumer<ClientesPendientesViewModel>(
+              builder: (_, vm, __) {
+                if (vm.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final list = vm.filteredClientes;
+                return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: list.length + (vm.isLoadingMore ? 1 : 0),
@@ -167,6 +171,7 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                     final scoreColor = c.hasHistory
                         ? _colorParaScore(c.scoreActual)
                         : Colors.grey;
+
                     return Card(
                       color: Colors.blue.shade50,
                       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -174,15 +179,26 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                           borderRadius: BorderRadius.circular(12)),
                       elevation: 2,
                       child: ListTile(
-                        onTap: () async {
-                          await Navigator.push(
+                        onTap: () {
+                          // capturo vm y controller antes
+                          final vmLocal =
+                              context.read<ClientesPendientesViewModel>();
+                          final controller = _searchCtrl;
+
+                          // navego y vuelvo en .then recargo todo
+                          Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
                                   TarjetaClienteScreen(clienteId: c.id),
                             ),
-                          );
-                          vm.loadInitial();
+                          ).then((_) {
+                            // limpio búsqueda
+                            controller.clear();
+                            setState(() => _searchTerm = '');
+                            // recargo desde cero
+                            vmLocal.loadInitial();
+                          });
                         },
                         title: Row(
                           children: [
@@ -241,11 +257,11 @@ class _ClientesPendientesScreenState extends State<ClientesPendientesScreen> {
                       ),
                     );
                   },
-                ),
-              ),
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
