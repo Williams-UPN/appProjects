@@ -75,4 +75,38 @@ class TarjetaClienteViewModel extends ChangeNotifier {
     debugPrint('🔔 [VM] resultado registrarEvento: $ok');
     return ok;
   }
+
+  // 1) Estado de crédito completo
+  bool get isCreditComplete => _cliente?.estadoReal == 'completo';
+
+  // 2) Montos formateados para la UI (siempre double)
+  double get montoPrestadoDisplay =>
+      isCreditComplete ? 0.0 : (_cliente?.montoSolicitado.toDouble() ?? 0.0);
+
+  double get saldoPendienteDisplay =>
+      isCreditComplete ? 0.0 : (_cliente?.saldoPendiente.toDouble() ?? 0.0);
+
+  double get cuotaDiariaDisplay {
+    if (isCreditComplete) return 0.0;
+    final numero = _cuotaSeleccionada ?? 1;
+    final data = _cronograma.firstWhere(
+      (c) => c.numeroCuota == numero,
+      orElse: () => CronogramaRead(
+        numeroCuota: numero,
+        montoCuota: _cliente?.cuotaDiaria.toDouble() ?? 0.0,
+        fechaPagado: null,
+      ),
+    );
+    return data.montoCuota.toDouble();
+  }
+
+  // 3) Mostrar/ocultar grid
+  bool get showCuotasGrid => !isCreditComplete;
+
+  // 4) Botón inferior
+  String get botonLabel =>
+      isCreditComplete ? 'Nuevo crédito' : 'Registrar pago';
+
+  VoidCallback? get botonAction =>
+      isCreditComplete ? null : () => registrarPago();
 }

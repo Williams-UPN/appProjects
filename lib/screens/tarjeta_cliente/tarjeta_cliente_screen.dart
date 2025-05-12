@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/cliente_detail_read.dart';
-import '../../models/cronograma_read.dart';
 import '../../models/historial_read.dart';
 import '../../viewmodels/tarjeta_cliente_viewmodel.dart';
 import '../../widgets/info_row.dart';
@@ -103,15 +102,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     }
 
     // Datos de la cuota seleccionada
-    final cuotaData = cronograma.firstWhere(
-      (r) => r.numeroCuota == cuotaSeleccionada,
-      orElse: () => CronogramaRead(
-        numeroCuota: 0,
-        montoCuota: c.cuotaDiaria,
-        fechaPagado: null,
-      ),
-    );
-    final displayCuota = cuotaData.montoCuota;
     final label = estadoLabel(c.estadoReal, c.diasReales);
     final color = estadoColor(c.estadoReal);
 
@@ -148,17 +138,17 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 children: [
                   InfoRow(
                     label: 'Monto prestado:',
-                    value: 'S/${c.montoSolicitado}',
+                    value: 'S/${vm.montoPrestadoDisplay.toStringAsFixed(2)}',
                     color: Colors.green,
                   ),
                   InfoRow(
                     label: 'Saldo pendiente:',
-                    value: 'S/${c.saldoPendiente.toStringAsFixed(2)}',
+                    value: 'S/${vm.saldoPendienteDisplay.toStringAsFixed(2)}',
                     color: Colors.red,
                   ),
                   InfoRow(
                     label: 'Cuota diaria:',
-                    value: 'S/${displayCuota.toStringAsFixed(2)}',
+                    value: 'S/${vm.cuotaDiariaDisplay.toStringAsFixed(2)}',
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -171,30 +161,31 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Grid de cuotas
-            Expanded(
-              child: CuotasGrid(
-                dias: c.plazoDias,
-                cronograma: cronograma, // ← lista de CronogramaRead
-                cuotaSeleccionada: cuotaSeleccionada,
-                siguienteCuotaValida: siguienteCuotaValida,
-                fechaInicio: c.fechaPrimerPago,
-                onSeleccionar: (n) {
-                  if (n != siguienteCuotaValida) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Debes pagar la cuota anterior para continuar',
+            // Grid de cuotas condicional
+            if (vm.showCuotasGrid)
+              Flexible(
+                child: CuotasGrid(
+                  dias: c.plazoDias,
+                  cronograma: cronograma,
+                  cuotaSeleccionada: cuotaSeleccionada,
+                  siguienteCuotaValida: siguienteCuotaValida,
+                  fechaInicio: c.fechaPrimerPago,
+                  onSeleccionar: (n) {
+                    if (n != siguienteCuotaValida) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Debes pagar la cuota anterior para continuar',
+                          ),
+                          duration: Duration(milliseconds: 800),
                         ),
-                        duration: Duration(milliseconds: 800),
-                      ),
-                    );
-                    return;
-                  }
-                  _vm.selectCuota(n);
-                },
+                      );
+                      return;
+                    }
+                    _vm.selectCuota(n);
+                  },
+                ),
               ),
-            ),
             // Botones estáticos: Llamar, Ubicación, Refinanciar
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -253,39 +244,31 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
             // Botón Registrar pago
             // Dentro de tu build(), en lugar del ElevatedButton original:
+
+            // Botón inferior (“Registrar pago” o “Nuevo crédito”)
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: cuotaSeleccionada == siguienteCuotaValida
-                    ? () async {
-                        debugPrint('🔔 [UI] Botón “Registrar pago” pulsado');
+                onPressed: vm.botonAction == null
+                    ? null
+                    : () async {
+                        debugPrint('🔔 [UI] Botón “${vm.botonLabel}” pulsado');
 
-                        // 1) Abrimos el diálogo y esperamos un bool
-                        final confirmed = await _showConfirmDialog(
-                          context,
-                          displayCuota,
-                          cuotaSeleccionada!,
-                        );
-                        debugPrint(
-                            '🔔 [UI] _showConfirmDialog devolvió: $confirmed');
-
-                        // 2) Si no confirmó, salimos sin hacer nada
-                        if (confirmed != true) {
-                          debugPrint('🔔 [UI] Pago cancelado por el usuario');
-                          return;
+                        if (!vm.isCreditComplete) {
+                          final confirmed = await _showConfirmDialog(
+                            context,
+                            vm.cuotaDiariaDisplay,
+                            vm.cuotaSeleccionada!,
+                          );
+                          if (confirmed != true) return;
+                          if (_lastObservaciones?.isNotEmpty == true) {
+                            await vm.registrarEvento(_lastObservaciones!);
+                          }
                         }
 
-                        // 3) Si hay observaciones, las obtenemos
-                        final obs = _lastObservaciones;
-                        if (obs != null && obs.isNotEmpty) {
-                          await vm.registrarEvento(obs);
-                        }
-
-                        // 4) Finalmente, sí registramos el pago
-                        debugPrint('🔔 [UI] Llamando a vm.registrarPago()');
-                        await vm.registrarPago();
-                      }
-                    : null,
+                        // Llama a la acción sin await porque devuelve void
+                        vm.botonAction!();
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF90CAF9),
                   foregroundColor: Colors.black,
@@ -294,7 +277,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Registrar pago'),
+                child: Text(vm.botonLabel),
               ),
             ),
           ],
