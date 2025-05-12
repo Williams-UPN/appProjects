@@ -20,31 +20,21 @@ class TarjetaClienteScreen extends StatefulWidget {
 
 class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
   late final TarjetaClienteViewModel _vm;
-
   String? _lastObservaciones;
 
   @override
   void initState() {
     super.initState();
-    // Leemos el VM y disparar carga de datos
     _vm = context.read<TarjetaClienteViewModel>();
     _vm.loadData(widget.clienteId);
   }
 
   Future<void> _llamar(String numero) async {
     final uri = Uri(scheme: 'tel', path: numero);
-    debugPrint('📞 Intentando llamar a $uri');
-
     final messenger = ScaffoldMessenger.of(context);
-
-    final can = await canLaunchUrl(uri);
-    if (can) {
-      await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      // Usamos el messenger capturado, no context directamente
       messenger.showSnackBar(
         SnackBar(content: Text('📱 Simulando llamada a $numero')),
       );
@@ -66,44 +56,8 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final cronograma = vm.cronograma;
     final historial = vm.historial;
     final cuotaSeleccionada = vm.cuotaSeleccionada;
-
-    // Siguiente cuota válida
     final siguienteCuotaValida =
         pagos.isEmpty ? 1 : pagos.reduce((a, b) => a > b ? a : b) + 1;
-
-    String estadoLabel(String raw, int diasAtraso) {
-      switch (raw) {
-        case 'proximo':
-          return 'Pago próximo';
-        case 'completo':
-          return 'Completado';
-        case 'atrasado':
-          return '$diasAtraso día(s) de atraso';
-        case 'pendiente':
-          return 'Pago pendiente hoy';
-        default:
-          return 'Al día';
-      }
-    }
-
-    Color estadoColor(String raw) {
-      switch (raw) {
-        case 'proximo':
-          return Colors.blue;
-        case 'pendiente':
-          return Colors.orange;
-        case 'atrasado':
-          return Colors.red;
-        case 'completo':
-          return Colors.green;
-        default:
-          return Colors.green;
-      }
-    }
-
-    // Datos de la cuota seleccionada
-    final label = estadoLabel(c.estadoReal, c.diasReales);
-    final color = estadoColor(c.estadoReal);
 
     return Scaffold(
       appBar: AppBar(
@@ -113,12 +67,14 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         elevation: 0,
       ),
       backgroundColor: Colors.white,
+      // dentro de tu Scaffold:
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Nombre y negocio
+            // ─────────────────────────────────────────────────────
+            // 1) Zona superior: nombre + tarjeta de datos
             Text(
               c.nombre,
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
@@ -126,8 +82,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
             if (c.negocio.isNotEmpty)
               Text(c.negocio, style: const TextStyle(color: Colors.grey)),
             const SizedBox(height: 20),
-
-            // Card de datos financieros
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -152,133 +106,132 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    label,
+                    vm.estadoLabel,
                     textAlign: TextAlign.justify,
-                    style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: vm.estadoColor,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
-            // Grid de cuotas condicional
-            if (vm.showCuotasGrid)
-              Flexible(
-                child: CuotasGrid(
-                  dias: c.plazoDias,
-                  cronograma: cronograma,
-                  cuotaSeleccionada: cuotaSeleccionada,
-                  siguienteCuotaValida: siguienteCuotaValida,
-                  fechaInicio: c.fechaPrimerPago,
-                  onSeleccionar: (n) {
-                    if (n != siguienteCuotaValida) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Debes pagar la cuota anterior para continuar',
-                          ),
-                          duration: Duration(milliseconds: 800),
-                        ),
-                      );
-                      return;
-                    }
-                    _vm.selectCuota(n);
-                  },
-                ),
-              ),
-            // Botones estáticos: Llamar, Ubicación, Refinanciar
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  TextButton.icon(
-                    onPressed: () => _llamar(c.telefono),
-                    icon: const Icon(Icons.phone, size: 20),
-                    label: const Text('Llamar'),
-                  ),
-                  TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.location_on, size: 20),
-                    label: const Text('Ubicación'),
-                  ),
-                  TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.refresh, size: 20),
-                    label: const Text('Refinanciar'),
-                  ),
-                ],
-              ),
-            ),
+            // ─────────────────────────────────────────────────────
+            // 2) Zona media: grid ocupa todo el espacio restante
+            vm.showCuotasGrid
+                ? Expanded(
+                    child: CuotasGrid(
+                      dias: c.plazoDias,
+                      cronograma: cronograma,
+                      cuotaSeleccionada: cuotaSeleccionada,
+                      siguienteCuotaValida: siguienteCuotaValida,
+                      fechaInicio: c.fechaPrimerPago,
+                      onSeleccionar: (n) {
+                        vm.selectCuota(n);
+                      },
+                    ),
+                  )
+                : const SizedBox.shrink(),
 
-            // Ver historial
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: GestureDetector(
-                onTap: c.estadoReal == 'completo'
-                    ? () {
-                        if (historial != null) {
-                          _showHistorialDialog(context, historial);
-                        }
-                      }
-                    : null,
-                child: Opacity(
-                  opacity: c.estadoReal == 'completo' ? 1.0 : 0.5,
+            // ─────────────────────────────────────────────────────
+            // 3) Zona inferior: controles anclados abajo
+            //    envolvemos todo en un Column para poder tener separación
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Llamar / Ubicación / Refinanciar
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.history, color: Colors.black54),
-                      SizedBox(width: 8),
-                      Text(
-                        'Ver Historial del Cliente',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => _llamar(c.telefono),
+                        icon: const Icon(Icons.phone, size: 20),
+                        label: const Text('Llamar'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {},
+                        icon: const Icon(Icons.location_on, size: 20),
+                        label: const Text('Ubicación'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {},
+                        icon: const Icon(Icons.refresh, size: 20),
+                        label: const Text('Refinanciar'),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ),
 
-            // Botón Registrar pago
-            // Dentro de tu build(), en lugar del ElevatedButton original:
-
-            // Botón inferior (“Registrar pago” o “Nuevo crédito”)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: vm.botonAction == null
-                    ? null
-                    : () async {
-                        debugPrint('🔔 [UI] Botón “${vm.botonLabel}” pulsado');
-
-                        if (!vm.isCreditComplete) {
-                          final confirmed = await _showConfirmDialog(
-                            context,
-                            vm.cuotaDiariaDisplay,
-                            vm.cuotaSeleccionada!,
-                          );
-                          if (confirmed != true) return;
-                          if (_lastObservaciones?.isNotEmpty == true) {
-                            await vm.registrarEvento(_lastObservaciones!);
+                // Ver historial
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: GestureDetector(
+                    onTap: vm.isCreditComplete
+                        ? () {
+                            if (historial != null) {
+                              _showHistorialDialog(context, historial);
+                            }
                           }
-                        }
-
-                        // Llama a la acción sin await porque devuelve void
-                        vm.botonAction!();
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF90CAF9),
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                        : null,
+                    child: Opacity(
+                      opacity: vm.isCreditComplete ? 1.0 : 0.5,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.history, color: Colors.black54),
+                          SizedBox(width: 8),
+                          Text(
+                            'Ver Historial del Cliente',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                child: Text(vm.botonLabel),
-              ),
+
+                // Registrar pago / Nuevo crédito
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: vm.botonAction == null
+                        ? null
+                        : () async {
+                            debugPrint(
+                                '🔔 [UI] Botón “${vm.botonLabel}” pulsado');
+                            if (!vm.isCreditComplete) {
+                              final confirmed = await _showConfirmDialog(
+                                context,
+                                vm.cuotaDiariaDisplay,
+                                vm.cuotaSeleccionada!,
+                              );
+                              if (confirmed != true) return;
+                              if (_lastObservaciones?.isNotEmpty == true) {
+                                await vm.registrarEvento(_lastObservaciones!);
+                              }
+                            }
+                            vm.botonAction!();
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF90CAF9),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(vm.botonLabel),
+                  ),
+                ),
+                SizedBox(height: 20),
+              ],
             ),
           ],
         ),
@@ -326,7 +279,8 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ),
@@ -349,19 +303,13 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
       ),
     );
 
-    // Guardamos la observación sólo si confirmó
     if (confirmed == true) {
       _lastObservaciones = obsLocal;
-      debugPrint(
-          '🔍 [UI] Diálogo confirmado → observaciones="$_lastObservaciones"');
       return true;
-    } else {
-      debugPrint('🔍 [UI] Diálogo cancelado o no confirmado');
-      return false;
     }
+    return false;
   }
 
-  // Diálogo de historial completo
   void _showHistorialDialog(BuildContext context, HistorialRead h) {
     showDialog(
       context: context,
@@ -436,7 +384,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
             child: Text(value,
                 textAlign: TextAlign.right,
                 style: const TextStyle(fontWeight: FontWeight.w400)),
-          ),
+          )
         ],
       ),
     );
@@ -444,6 +392,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
   String _formatFecha(DateTime? fecha) {
     if (fecha == null) return '-';
-    return '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
+    return '${fecha.day.toString().padLeft(2, '0')}/'
+        '${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
   }
 }
