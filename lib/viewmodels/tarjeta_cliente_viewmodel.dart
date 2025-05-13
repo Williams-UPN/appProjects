@@ -24,6 +24,7 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   double _nuevoMontoPrestado = 0.0;
   double _nuevoSaldoPendiente = 0.0;
   double _nuevaCuotaDiaria = 0.0;
+  double _nuevaUltimaCuota = 0.0;
 
   // Getters básicos
   bool get isLoading => _isLoading;
@@ -47,6 +48,8 @@ class TarjetaClienteViewModel extends ChangeNotifier {
 
   bool get puedeIniciarRefinanciamiento =>
       !isCreditComplete && _cliente != null;
+
+  double get nuevaUltimaCuotaDisplay => _nuevaUltimaCuota;
 
   /// 2) Calcula cuál es la cuota “de hoy” (la siguiente no pagada).
   int get cuotaHoy {
@@ -179,17 +182,12 @@ class TarjetaClienteViewModel extends ChangeNotifier {
 
   /// 1) Método para resetear antes de abrir el diálogo:
   void iniciarRefinanciamiento() {
-    // 1) Monto que ingresa el usuario
     _montoAdicional = 0.0;
-
-    // 2) El plazo original (12 o 24)
     _plazoRefinanciar = _cliente?.plazoDias ?? 12;
-
-    // 3) Valores “base” para mostrar antes de teclear nada:
     _nuevoMontoPrestado = 0.0;
     _nuevoSaldoPendiente = 0.0;
     _nuevaCuotaDiaria = 0.0;
-
+    _nuevaUltimaCuota = 0.0;
     notifyListeners();
   }
 
@@ -219,19 +217,31 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   // 3) Setters para capturar la entrada del usuario en el diálogo:
   void setMontoAdicional(double monto) {
     _montoAdicional = monto;
-
-    // 1) Base: saldo pendiente actual
     final base = _cliente?.saldoPendiente.toDouble() ?? 0.0;
+    final plazo = _plazoRefinanciar;
 
-    // 2) Nuevo monto prestado = base + monto adicional
-    _nuevoMontoPrestado = base + monto;
+    // 1) Unión: saldo actual + monto a solicitar
+    final union = base + monto;
+    debugPrint('🔍 [Refi] base=$base, montoSolicitar=$monto → union=$union');
 
-    // 3) Nuevo saldo pendiente = mismo que el nuevo monto prestado
-    _nuevoSaldoPendiente = _nuevoMontoPrestado;
+    // 2) Tasa según plazo
+    final tasa = plazo == 12 ? 10 : 20;
+    debugPrint('🔍 [Refi] plazo=$plazo días → tasa=$tasa%');
 
-    // 4) Nueva cuota diaria = ceil(nuevoSaldo / plazo original)
-    final plazo = _cliente?.plazoDias.toDouble() ?? 12.0;
-    _nuevaCuotaDiaria = (_nuevoSaldoPendiente / plazo).ceilToDouble();
+    // 3) Nuevo total a pagar
+    final totalPagar = union * (1 + tasa / 100);
+    debugPrint('🔍 [Refi] totalPagar (con interés)=$totalPagar');
+
+    // 4) Reparto en cuotas
+    final diaria = (totalPagar / plazo).ceilToDouble();
+    final ultima = totalPagar - diaria * (plazo - 1);
+    debugPrint('🔍 [Refi] cuotaDiaria=$diaria, ultimaCuota=$ultima');
+
+    // 5) Asignar a campos de preview
+    _nuevoMontoPrestado = union;
+    _nuevoSaldoPendiente = totalPagar;
+    _nuevaCuotaDiaria = diaria;
+    _nuevaUltimaCuota = ultima;
 
     notifyListeners();
   }

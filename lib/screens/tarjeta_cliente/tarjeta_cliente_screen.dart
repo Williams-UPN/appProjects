@@ -468,9 +468,6 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
   Future<void> _showRefinanciarDialog(BuildContext context) async {
     final vm = context.read<TarjetaClienteViewModel>();
-    vm.iniciarRefinanciamiento();
-
-    // ① Capturamos el messenger de la pantalla **antes** de abrir el diálogo
     final messenger = ScaffoldMessenger.of(context);
 
     double montoNuevo = 0;
@@ -487,7 +484,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 1) Saldo pendiente actual
+                  // 1) Muestra el saldo pendiente actual
                   Row(
                     children: [
                       const Text('Saldo pendiente: '),
@@ -497,7 +494,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
                   const SizedBox(height: 12),
 
-                  // 2) Mostrar los nuevos montos (si hay montoAdicional)
+                  // 2) Sólo si el usuario ya escribió algo, mostramos los nuevos cálculos:
                   if (vm.montoAdicional > 0) ...[
                     Row(
                       children: [
@@ -520,10 +517,20 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                             'S/${vm.nuevaCuotaDiariaDisplay.toStringAsFixed(2)}'),
                       ],
                     ),
+                    // ← Añade aquí ↓
+                    if (vm.nuevaUltimaCuotaDisplay !=
+                        vm.nuevaCuotaDiariaDisplay)
+                      Row(
+                        children: [
+                          const Text('Nueva última cuota: '),
+                          Text(
+                              'S/${vm.nuevaUltimaCuotaDisplay.toStringAsFixed(2)}'),
+                        ],
+                      ),
                     const SizedBox(height: 12),
                   ],
 
-                  // 3) Plazo (fijo, deshabilitado)
+                  // 3) Plazo fijo (solo para mostrar, no se cambia)
                   InputDecorator(
                     decoration:
                         const InputDecoration(labelText: 'Plazo (días)'),
@@ -532,7 +539,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
                   const SizedBox(height: 12),
 
-                  // 4) Monto a solicitar
+                  // 4) Campo para que el usuario ingrese monto adicional
                   TextFormField(
                     decoration: const InputDecoration(
                       labelText: 'Monto a solicitar',
@@ -542,7 +549,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     onChanged: (v) {
                       montoNuevo = double.tryParse(v) ?? 0;
                       vm.setMontoAdicional(montoNuevo);
-                      setState(() {}); // fuerza rebuild del diálogo
+                      setState(() {}); // fuerza actualización del diálogo
                     },
                   ),
                 ],
@@ -555,14 +562,11 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 ElevatedButton(
                   onPressed: montoNuevo > 0
                       ? () async {
-                          // ② Cerramos el diálogo con su propio context
                           Navigator.of(dialogContext).pop();
-                          // ③ Esperamos el refinanciamiento
                           final ok = await vm.confirmarRefinanciamiento(
                             montoNuevo,
                             plazoOriginal,
                           );
-                          // ④ Mostramos el SnackBar con el messenger capturado
                           messenger.showSnackBar(
                             SnackBar(
                               content: Text(
