@@ -111,23 +111,22 @@ class ClienteRepositoryImpl implements ClienteRepository {
   Future<bool> refinanciar(
       int clienteId, double montoAdicional, int plazoDias) async {
     try {
-      // 1) Leemos el saldo pendiente actual como un Map
-      final Map<String, dynamic> record = await _supabase
+      // 1) Leemos el saldo pendiente actual
+      final record = await _supabase
           .from('clientes')
           .select('saldo_pendiente')
           .eq('id', clienteId)
-          .single(); // devuelve directamente el registro o lanza error
-
+          .single();
       final currentSaldo = (record['saldo_pendiente'] as num).toDouble();
 
       // 2) Calculamos el nuevo monto_solicitado
       final nuevoMonto = currentSaldo + montoAdicional;
 
-      // 3) Hacemos el update (lanza excepción si falla)
+      // 3) Disparamos el UPDATE sobre clientes
       await _supabase.from('clientes').update({
         'monto_solicitado': nuevoMonto,
         'plazo_dias': plazoDias,
-        'saldo_pendiente': nuevoMonto,
+        'fecha_primer_pago': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', clienteId);
 
       return true;
