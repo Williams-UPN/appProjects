@@ -187,7 +187,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                     onPressed: historiales.isNotEmpty
                         ? () => _showHistorialDialog(context, historiales)
                         : null,
-                    icon: const Icon(Icons.history, color: Colors.black54),
+                    icon: Icon(
+                      Icons.history,
+                      color: historiales.isNotEmpty
+                          ? Colors.black54
+                          : Colors.black38,
+                    ),
                     label: Text(
                       'Ver Historial del Cliente',
                       style: TextStyle(

@@ -27,6 +27,8 @@ DROP TABLE IF EXISTS public.cliente_historial CASCADE;
 DROP VIEW IF EXISTS public.v_clientes_con_estado;
 DROP VIEW IF EXISTS public.v_cliente_score;
 DROP VIEW IF EXISTS public.v_cliente_historial_completo;
+DROP VIEW IF EXISTS public.v_creditos_cerrados;
+
 
 -- ==========================================================
 -- 1. TABLAS
@@ -233,18 +235,32 @@ CREATE TRIGGER trg_clientes_ai
   AFTER INSERT ON public.clientes
   FOR EACH ROW EXECUTE PROCEDURE public._trigger_generar_cronograma();
 
--- ==========================================================
+-- ───────────────────────────────────────────────────────────
 -- 6. AFTER UPDATE: regenerar cronograma si cambian términos
--- ==========================================================
+--             Y actualizar saldo pendiente al total recalculado
+-- ───────────────────────────────────────────────────────────
+
 CREATE OR REPLACE FUNCTION public._trigger_regenerar_cronograma()
   RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF OLD.monto_solicitado <> NEW.monto_solicitado
      OR OLD.plazo_dias       <> NEW.plazo_dias
      OR OLD.fecha_primer_pago<> NEW.fecha_primer_pago THEN
-    DELETE FROM public.cronograma WHERE cliente_id = NEW.id;
+
+    -- 1) Borra cronograma viejo
+    DELETE FROM public.cronograma
+     WHERE cliente_id = NEW.id;
+
+    -- 2) Genera cronograma nuevo (recalcula montos e interés)
     PERFORM public._crear_cronograma_aux(NEW.id);
+
+    -- 3) Ajusta el saldo pendiente al total recalculado
+    UPDATE public.clientes
+       SET saldo_pendiente     = NEW.total_pagar,
+           ultima_cuota_numero = 0
+     WHERE id = NEW.id;
   END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -629,3 +645,28 @@ SELECT
 FROM public.clientes AS cli
 LEFT JOIN mora       m ON m.cliente_id = cli.id
 LEFT JOIN agg_scores a ON a.cliente_id = cli.id;
+
+-- ==========================================================
+-- 14. VISTA: créditos cerrados (uno por cada crédito finalizado)
+-- ==========================================================
+CREATE OR REPLACE VIEW public.v_creditos_cerrados AS
+SELECT
+  ch.id               AS historial_id,
+  ch.cliente_id       AS credito_id,
+
+  (
+    SELECT MIN(cr.fecha_venc)
+    FROM public.cronograma cr
+    WHERE cr.cliente_id = ch.cliente_id
+  )                    AS fecha_inicio,
+
+  ch.fecha_cierre     AS fecha_cierre_real,
+  ch.monto_solicitado AS monto_solicitado,
+  ch.total_pagado     AS total_pagado,
+  ch.dias_totales     AS dias_totales,
+  ch.dias_atraso_max  AS dias_atraso_max,
+  ch.incidencias      AS incidencias,
+  ch.observaciones    AS observaciones,
+  ch.calificacion     AS calificacion
+FROM public.cliente_historial ch
+ORDER BY ch.fecha_cierre;

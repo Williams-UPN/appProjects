@@ -131,16 +131,17 @@ class SupabaseClienteDatasource implements ClienteDatasource {
 
   @override
   Future<List<HistorialRead>> fetchHistoriales(int clienteId) async {
-    // 1) Apunta a la vista corregida, que ya expone
-    //    los campos que tu modelo espera, y con nombres exactos:
     final raw = await _supabase
-        .from('v_cliente_historial_completo')
-        .select('fecha_inicio, fecha_cierre_real, monto_solicitado, '
-            'total_pagado, dias_totales, dias_atraso_max')
-        .eq('cliente_id', clienteId)
+        .from('v_creditos_cerrados')
+        .select('fecha_inicio, '
+            'fecha_cierre_real, '
+            'monto_solicitado, '
+            'total_pagado, '
+            'dias_totales, '
+            'dias_atraso_max')
+        .eq('credito_id', clienteId)
         .order('fecha_cierre_real', ascending: true);
 
-    // 2) Mapea a tu modelo sin riesgo de null mismatch
     return (raw as List)
         .map((m) => HistorialRead.fromMap(m as Map<String, dynamic>))
         .toList();
