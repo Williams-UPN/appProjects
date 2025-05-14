@@ -10,6 +10,8 @@ import '../../viewmodels/tarjeta_cliente_viewmodel.dart';
 import '../../widgets/info_row.dart';
 import '../../widgets/cuotas_grid.dart';
 
+const blue = Color(0xFF90CAF9);
+
 class TarjetaClienteScreen extends StatefulWidget {
   final int clienteId;
   const TarjetaClienteScreen({super.key, required this.clienteId});
@@ -151,6 +153,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Llamar / Ubicación / Refinanciar
+
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Row(
@@ -160,11 +163,19 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                         onPressed: () => _llamar(c.telefono),
                         icon: const Icon(Icons.phone, size: 20),
                         label: const Text('Llamar'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black, // texto en negro
+                          iconColor: blue, // icono en azul
+                        ),
                       ),
                       TextButton.icon(
                         onPressed: () {},
                         icon: const Icon(Icons.location_on, size: 20),
                         label: const Text('Ubicación'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          iconColor: blue,
+                        ),
                       ),
                       TextButton.icon(
                         onPressed: vm.puedeIniciarRefinanciamiento
@@ -172,9 +183,13 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                                 vm.iniciarRefinanciamiento();
                                 _showRefinanciarDialog(context);
                               }
-                            : null, // si no puede, queda deshabilitado
+                            : null,
                         icon: const Icon(Icons.refresh, size: 20),
                         label: const Text('Refinanciar'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          iconColor: blue,
+                        ),
                       ),
                     ],
                   ),
@@ -479,108 +494,158 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setState) {
-            return AlertDialog(
-              title: const Text('Refinanciar Préstamo'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 1) Muestra el saldo pendiente actual
-                  Row(
-                    children: [
-                      const Text('Saldo pendiente: '),
-                      Text('S/${vm.saldoPendienteDisplay.toStringAsFixed(2)}'),
-                    ],
-                  ),
+            return Dialog(
+              backgroundColor: Colors.white,
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: const Color(0xFF90CAF9), width: 2),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // — Título —
+                    const Center(
+                      child: Text(
+                        'REFINANCIAR PRÉSTAMO',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
 
-                  const SizedBox(height: 12),
+                    // — Saldo pendiente —
+                    Row(
+                      children: [
+                        const Text('Saldo pendiente: ',
+                            style: TextStyle(color: Colors.black)),
+                        Text(
+                          'S/${vm.saldoPendienteDisplay.toStringAsFixed(2)}',
+                          style: const TextStyle(color: Colors.black),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
 
-                  // 2) Sólo si el usuario ya escribió algo, mostramos los nuevos cálculos:
-                  if (vm.montoAdicional > 0) ...[
-                    Row(
-                      children: [
-                        const Text('Nuevo monto prestado: '),
-                        Text(
-                            'S/${vm.nuevoMontoPrestadoDisplay.toStringAsFixed(2)}'),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        const Text('Nuevo saldo pendiente: '),
-                        Text(
-                            'S/${vm.nuevoSaldoPendienteDisplay.toStringAsFixed(2)}'),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        const Text('Nueva cuota diaria: '),
-                        Text(
-                            'S/${vm.nuevaCuotaDiariaDisplay.toStringAsFixed(2)}'),
-                      ],
-                    ),
-                    // ← Añade aquí ↓
-                    if (vm.nuevaUltimaCuotaDisplay !=
-                        vm.nuevaCuotaDiariaDisplay)
+                    // — Resultados intermedios —
+                    if (vm.montoAdicional > 0) ...[
                       Row(
                         children: [
-                          const Text('Nueva última cuota: '),
+                          const Text('Nuevo monto prestado: ',
+                              style: TextStyle(color: Colors.black)),
                           Text(
-                              'S/${vm.nuevaUltimaCuotaDisplay.toStringAsFixed(2)}'),
+                            'S/${vm.nuevoMontoPrestadoDisplay.toStringAsFixed(2)}',
+                            style: const TextStyle(color: Colors.black),
+                          ),
                         ],
                       ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // 3) Plazo fijo (solo para mostrar, no se cambia)
-                  InputDecorator(
-                    decoration:
-                        const InputDecoration(labelText: 'Plazo (días)'),
-                    child: Text('$plazoOriginal días'),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // 4) Campo para que el usuario ingrese monto adicional
-                  TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'Monto a solicitar',
-                      prefixText: 'S/ ',
-                    ),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      montoNuevo = double.tryParse(v) ?? 0;
-                      vm.setMontoAdicional(montoNuevo);
-                      setState(() {}); // fuerza actualización del diálogo
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
-                ),
-                ElevatedButton(
-                  onPressed: montoNuevo > 0
-                      ? () async {
-                          Navigator.of(dialogContext).pop();
-                          final ok = await vm.confirmarRefinanciamiento(
-                            montoNuevo,
-                            plazoOriginal,
-                          );
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                ok
-                                    ? 'Refinanciamiento exitoso'
-                                    : 'Error al refinanciar',
-                              ),
+                      Row(
+                        children: [
+                          const Text('Nuevo saldo pendiente: ',
+                              style: TextStyle(color: Colors.black)),
+                          Text(
+                            'S/${vm.nuevoSaldoPendienteDisplay.toStringAsFixed(2)}',
+                            style: const TextStyle(color: Colors.black),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          const Text('Nueva cuota diaria: ',
+                              style: TextStyle(color: Colors.black)),
+                          Text(
+                            'S/${vm.nuevaCuotaDiariaDisplay.toStringAsFixed(2)}',
+                            style: const TextStyle(color: Colors.black),
+                          ),
+                        ],
+                      ),
+                      if (vm.nuevaUltimaCuotaDisplay !=
+                          vm.nuevaCuotaDiariaDisplay)
+                        Row(
+                          children: [
+                            const Text('Nueva última cuota: ',
+                                style: TextStyle(color: Colors.black)),
+                            Text(
+                              'S/${vm.nuevaUltimaCuotaDisplay.toStringAsFixed(2)}',
+                              style: const TextStyle(color: Colors.black),
                             ),
-                          );
-                        }
-                      : null,
-                  child: const Text('Confirmar'),
+                          ],
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // — Plazo —
+                    InputDecorator(
+                      decoration:
+                          const InputDecoration(labelText: 'Plazo (días)'),
+                      child: Text(
+                        '$plazoOriginal días',
+                        style: const TextStyle(color: Colors.black),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // — Campo monto adicional —
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Monto a solicitar',
+                        prefixText: 'S/ ',
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (v) {
+                        montoNuevo = double.tryParse(v) ?? 0;
+                        vm.setMontoAdicional(montoNuevo);
+                        setState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 24),
+
+                    // — Botones de acción —
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.black,
+                          ),
+                          child: const Text('Cancelar'),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: montoNuevo > 0
+                              ? () async {
+                                  Navigator.of(dialogContext).pop();
+                                  final ok = await vm.confirmarRefinanciamiento(
+                                      montoNuevo, plazoOriginal);
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(ok
+                                          ? 'Refinanciamiento exitoso'
+                                          : 'Error al refinanciar'),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF90CAF9),
+                            foregroundColor: Colors.black,
+                          ),
+                          child: const Text('Confirmar'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
+              ),
             );
           },
         );
