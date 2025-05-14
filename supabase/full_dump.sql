@@ -196,11 +196,12 @@ CREATE OR REPLACE FUNCTION "public"."_trigger_generar_cronograma"() RETURNS "tri
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
-  v_hoy    DATE := (now() AT TIME ZONE 'America/Lima')::date;
-  v_fp     DATE := (NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date;
-  v_estado TEXT;
+  v_hoy   date := (now() AT TIME ZONE 'America/Lima')::date;
+  v_fp    date := NEW.fecha_primer_pago;  -- ya es DATE
+  v_estado text;
 BEGIN
   PERFORM public._crear_cronograma_aux(NEW.id);
+
   UPDATE public.clientes
     SET saldo_pendiente     = NEW.total_pagar,
         ultima_cuota_numero = 0
@@ -417,34 +418,23 @@ CREATE OR REPLACE FUNCTION "public"."_validar_y_recalcular_cliente"() RETURNS "t
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
-  v_tasa   NUMERIC;
-  v_total  NUMERIC;
-  v_std    NUMERIC;
-  v_last   NUMERIC;
-  -- calculamos hoy en Lima convirtiendo desde UTC
-  v_today  DATE := ((now() AT TIME ZONE 'UTC') AT TIME ZONE 'America/Lima')::date;
+  v_today date := (now() AT TIME ZONE 'America/Lima')::date;
+  v_tasa  numeric;
+  v_total numeric;
+  v_std   numeric;
+  v_last  numeric;
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    -- en un INSERT normal nos aseguramos de que la fecha_primer_pago sea ≥ hoy (Lima)
-    IF (NEW.fecha_primer_pago AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date < v_today THEN
-      RAISE EXCEPTION
-        'fecha_primer_pago (%) debe ser ≥ hoy (Lima: %)',
-        NEW.fecha_primer_pago,
-        v_today;
-    END IF;
-  ELSE
-    -- en un UPDATE (es decir, refinanciamiento), reiniciamos primer pago a ahora mismo en Lima
-    NEW.fecha_primer_pago := (now() AT TIME ZONE 'UTC') AT TIME ZONE 'America/Lima';
+  IF NEW.fecha_primer_pago < v_today THEN
+    RAISE EXCEPTION 'fecha_primer_pago (%) debe ser ≥ hoy (Lima: %)',
+      NEW.fecha_primer_pago, v_today;
   END IF;
 
-  -- validaciones estándar
   IF NEW.monto_solicitado <= 0 THEN
     RAISE EXCEPTION 'monto_solicitado (%) debe ser > 0', NEW.monto_solicitado;
   ELSIF NEW.plazo_dias NOT IN (12, 24) THEN
     RAISE EXCEPTION 'plazo_dias (%) inválido', NEW.plazo_dias;
   END IF;
 
-  -- cálculos de total, cuotas
   v_tasa  := CASE WHEN NEW.plazo_dias = 12 THEN 10 ELSE 20 END;
   v_total := NEW.monto_solicitado * (1 + v_tasa/100);
   v_std   := ceil(v_total / NEW.plazo_dias);
@@ -453,8 +443,7 @@ BEGIN
   NEW.total_pagar         := v_total;
   NEW.cuota_diaria        := v_std;
   NEW.ultima_cuota        := v_last;
-  NEW.fecha_final         := (NEW.fecha_primer_pago::date
-                              + (NEW.plazo_dias - 1) * INTERVAL '1 day');
+  NEW.fecha_final         := NEW.fecha_primer_pago + (NEW.plazo_dias - 1);
   NEW.ultima_cuota_numero := 0;
 
   RETURN NEW;
@@ -928,7 +917,6 @@ CREATE TABLE IF NOT EXISTS "public"."clientes" (
     "monto_solicitado" numeric DEFAULT 0 NOT NULL,
     "plazo_dias" integer DEFAULT 0 NOT NULL,
     "fecha_creacion" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "fecha_primer_pago" timestamp with time zone NOT NULL,
     "fecha_final" timestamp with time zone NOT NULL,
     "total_pagar" numeric DEFAULT 0 NOT NULL,
     "cuota_diaria" numeric DEFAULT 0 NOT NULL,
@@ -937,11 +925,38 @@ CREATE TABLE IF NOT EXISTS "public"."clientes" (
     "dias_atraso" integer DEFAULT 0 NOT NULL,
     "estado_pago" "text" DEFAULT 'al_dia'::"text" NOT NULL,
     "ultima_cuota_numero" integer DEFAULT 0 NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "fecha_primer_pago_date" "date",
+    "fecha_primer_pago" "date"
 );
 
 
 ALTER TABLE "public"."clientes" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."clientes_backup" (
+    "id" bigint,
+    "nombre" "text",
+    "telefono" "text",
+    "direccion" "text",
+    "negocio" "text",
+    "monto_solicitado" numeric,
+    "plazo_dias" integer,
+    "fecha_creacion" timestamp with time zone,
+    "fecha_primer_pago" timestamp with time zone,
+    "fecha_final" timestamp with time zone,
+    "total_pagar" numeric,
+    "cuota_diaria" numeric,
+    "ultima_cuota" numeric,
+    "saldo_pendiente" numeric,
+    "dias_atraso" integer,
+    "estado_pago" "text",
+    "ultima_cuota_numero" integer,
+    "created_at" timestamp with time zone
+);
+
+
+ALTER TABLE "public"."clientes_backup" OWNER TO "postgres";
 
 
 CREATE SEQUENCE IF NOT EXISTS "public"."clientes_id_seq"
@@ -1090,12 +1105,12 @@ CREATE OR REPLACE VIEW "public"."v_clientes_con_estado" AS
             "row_number"() OVER (PARTITION BY "ch"."cliente_id" ORDER BY "ch"."fecha_cierre" DESC) AS "rn"
            FROM "public"."cliente_historial" "ch"
         ), "agg_scores" AS (
-         SELECT "ranked_scores"."cliente_id",
-            "round"("avg"("ranked_scores"."score_local"), 0) AS "score_actual",
+         SELECT "rs"."cliente_id",
+            "round"("avg"("rs"."score_local"), 0) AS "score_actual",
             true AS "has_history"
-           FROM "ranked_scores"
-          WHERE ("ranked_scores"."rn" <= 5)
-          GROUP BY "ranked_scores"."cliente_id"
+           FROM "ranked_scores" "rs"
+          WHERE ("rs"."rn" <= 5)
+          GROUP BY "rs"."cliente_id"
         )
  SELECT "cli"."id",
     "cli"."nombre",
@@ -1113,7 +1128,7 @@ CREATE OR REPLACE VIEW "public"."v_clientes_con_estado" AS
     "cli"."saldo_pendiente",
     "m"."cuotas_vencidas" AS "dias_reales",
         CASE
-            WHEN ((("cli"."fecha_primer_pago" AT TIME ZONE 'America/Lima'::"text"))::"date" > (("now"() AT TIME ZONE 'America/Lima'::"text"))::"date") THEN 'proximo'::"text"
+            WHEN ("cli"."fecha_primer_pago" > (("now"() AT TIME ZONE 'America/Lima'::"text"))::"date") THEN 'proximo'::"text"
             WHEN "m"."todas_pagadas" THEN 'completo'::"text"
             WHEN ("m"."cuotas_vencidas" > 0) THEN 'atrasado'::"text"
             WHEN "m"."cuota_hoy_pendiente" THEN 'pendiente'::"text"
@@ -1207,7 +1222,11 @@ CREATE OR REPLACE TRIGGER "trg_clientes_ai" AFTER INSERT ON "public"."clientes" 
 
 
 
-CREATE OR REPLACE TRIGGER "trg_clientes_bi" BEFORE INSERT ON "public"."clientes" FOR EACH ROW EXECUTE FUNCTION "public"."_validar_y_recalcular_cliente"();
+CREATE OR REPLACE TRIGGER "trg_clientes_bi_insert" BEFORE INSERT ON "public"."clientes" FOR EACH ROW EXECUTE FUNCTION "public"."_validar_y_recalcular_cliente"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_clientes_bi_update" BEFORE UPDATE ON "public"."clientes" FOR EACH ROW WHEN ((("old"."fecha_primer_pago" IS DISTINCT FROM "new"."fecha_primer_pago") OR ("old"."monto_solicitado" IS DISTINCT FROM "new"."monto_solicitado") OR ("old"."plazo_dias" IS DISTINCT FROM "new"."plazo_dias"))) EXECUTE FUNCTION "public"."_validar_y_recalcular_cliente"();
 
 
 
@@ -1581,6 +1600,12 @@ GRANT ALL ON SEQUENCE "public"."cliente_historial_id_seq" TO "service_role";
 GRANT ALL ON TABLE "public"."clientes" TO "anon";
 GRANT ALL ON TABLE "public"."clientes" TO "authenticated";
 GRANT ALL ON TABLE "public"."clientes" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."clientes_backup" TO "anon";
+GRANT ALL ON TABLE "public"."clientes_backup" TO "authenticated";
+GRANT ALL ON TABLE "public"."clientes_backup" TO "service_role";
 
 
 
