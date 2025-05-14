@@ -27,6 +27,12 @@ abstract class ClienteRepository {
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
   Future<bool> registrarEvento(int clienteId, String descripcion);
   Future<bool> refinanciar(int clienteId, double montoAdicional, int plazoDias);
+  Future<bool> nuevoCredito(
+    int clienteId,
+    double montoSolicitado,
+    int plazoDias,
+    DateTime fechaPrimerPago,
+  );
 }
 
 class ClienteRepositoryImpl implements ClienteRepository {
@@ -145,5 +151,29 @@ class ClienteRepositoryImpl implements ClienteRepository {
       debugPrint('❌ [Repo] refinanciar ERROR: $e');
       return false;
     }
+  }
+
+  @override
+  Future<bool> nuevoCredito(
+    int clienteId,
+    double montoSolicitado,
+    int plazoDias,
+    DateTime fechaPrimerPago,
+  ) async {
+    final isoDate = fechaPrimerPago.toIso8601String().split('T').first;
+    debugPrint('🔔 [Repo] INICIANDO nuevoCredito RPC → '
+        'clienteId=$clienteId, monto=$montoSolicitado, plazo=$plazoDias, fecha=$isoDate');
+
+    final ok = await _ds.nuevoCreditoRpc(
+      clienteId: clienteId,
+      montoSolicitado: montoSolicitado,
+      plazoDias: plazoDias,
+      fechaPrimerPago: isoDate,
+    );
+
+    debugPrint(ok
+        ? '✅ [Repo] nuevoCredito RPC OK'
+        : '❌ [Repo] nuevoCredito RPC FALLÓ');
+    return ok;
   }
 }

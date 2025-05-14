@@ -43,16 +43,62 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     }
   }
 
+  Future<void> _onRegistrarPago() async {
+    final vm = context.read<TarjetaClienteViewModel>();
+    final monto = vm.cuotaSeleccionada == vm.cliente!.plazoDias
+        ? vm.cliente!.ultimaCuota
+        : vm.cliente!.cuotaDiaria;
+    final cuota = vm.cuotaSeleccionada!;
+    // 1) Abre diálogo de confirmación
+    final ok = await _showConfirmDialog(context, monto, cuota);
+    if (!ok) return; // si el usuario canceló, salimos
+    debugPrint('🔔 [UI] Usuario confirmó pago de cuota $cuota');
+
+    // 2) Registra el pago
+    final success = await vm.registrarPago();
+    debugPrint('🔔 [UI] registrarPago() devolvió: $success');
+
+    // 3) Muestra un SnackBar de resultado
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success
+              ? 'Pago de cuota $cuota registrado'
+              : 'Error al registrar pago'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<TarjetaClienteViewModel>();
 
+    // ─────────────────────────────────────────────────────
+    // 0) Lógica del botón inferior: Registrar pago o Nuevo crédito
+    final esCompleto = vm.isCreditComplete;
+    final textoBoton = esCompleto ? 'Nuevo crédito' : 'Registrar pago';
+    final accionBoton = esCompleto
+        ? () {
+            debugPrint('🔔 [UI] Botón “Nuevo crédito” pulsado');
+            _vm.iniciarNuevoCredito();
+            _showNuevoCreditoDialog(context);
+          }
+        : () {
+            debugPrint('🔔 [UI] Botón “Registrar pago” pulsado');
+            _onRegistrarPago(); // <-- aquí llamamos a tu nuevo flujo
+          };
+
+    // ─────────────────────────────────────────────────────
+    // 1) Guard: mientras carga o no hay cliente
     if (vm.isLoading || vm.cliente == null) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
+    // ─────────────────────────────────────────────────────
+    // 2) Datos necesarios para la UI
     final ClienteDetailRead c = vm.cliente!;
     final pagos = vm.pagos.map((p) => p.numeroCuota).toList();
     final cronograma = vm.cronograma;
@@ -62,6 +108,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     final siguienteCuotaValida =
         pagos.isEmpty ? 1 : pagos.reduce((a, b) => a > b ? a : b) + 1;
 
+    // ─────────────────────────────────────────────────────
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalle del Cliente'),
@@ -70,14 +117,13 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
         elevation: 0,
       ),
       backgroundColor: Colors.white,
-      // dentro de tu Scaffold:
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ─────────────────────────────────────────────────────
-            // 1) Zona superior: nombre + tarjeta de datos
+            // 1) Zona superior
             Text(
               c.nombre,
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
@@ -122,7 +168,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
             const SizedBox(height: 20),
 
             // ─────────────────────────────────────────────────────
-            // 2) Zona media: grid ocupa todo el espacio restante
+            // 2) Zona media: Cronograma
             vm.showCuotasGrid
                 ? Expanded(
                     child: CuotasGrid(
@@ -132,13 +178,19 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       siguienteCuotaValida: siguienteCuotaValida,
                       fechaInicio: c.fechaPrimerPago,
                       onSeleccionar: (n) {
+                        debugPrint(
+                            '▷ cuota tocada: $n, siguiente válida: $siguienteCuotaValida');
                         if (n <= siguienteCuotaValida) {
                           vm.selectCuota(n);
+                          debugPrint(
+                              '▷ cuotaSeleccionada ahora es ${vm.cuotaSeleccionada}');
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                                content: Text(
-                                    'Primero paga la cuota $siguienteCuotaValida')),
+                              content: Text(
+                                'Primero paga la cuota $siguienteCuotaValida',
+                              ),
+                            ),
                           );
                         }
                       },
@@ -147,13 +199,11 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 : const SizedBox.shrink(),
 
             // ─────────────────────────────────────────────────────
-            // 3) Zona inferior: controles anclados abajo
-            //    envolvemos todo en un Column para poder tener separación
+            // 3) Zona inferior: Controles anclados al fondo
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Llamar / Ubicación / Refinanciar
-
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Row(
@@ -164,8 +214,8 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                         icon: const Icon(Icons.phone, size: 20),
                         label: const Text('Llamar'),
                         style: TextButton.styleFrom(
-                          foregroundColor: Colors.black, // texto en negro
-                          iconColor: blue, // icono en azul
+                          foregroundColor: Colors.black,
+                          iconColor: blue,
                         ),
                       ),
                       TextButton.icon(
@@ -221,40 +271,24 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                   ),
                 ),
 
+                // ─────────────────────────────────────────────────────
                 // Registrar pago / Nuevo crédito
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: vm.botonAction == null
-                        ? null
-                        : () async {
-                            debugPrint(
-                                '🔔 [UI] Botón “${vm.botonLabel}” pulsado');
-                            if (!vm.isCreditComplete) {
-                              final confirmed = await _showConfirmDialog(
-                                context,
-                                vm.cuotaDiariaDisplay,
-                                vm.cuotaSeleccionada!,
-                              );
-                              if (confirmed != true) return;
-                              if (_lastObservaciones?.isNotEmpty == true) {
-                                await vm.registrarEvento(_lastObservaciones!);
-                              }
-                            }
-                            vm.botonAction!();
-                          },
+                    onPressed: accionBoton,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF90CAF9),
+                      backgroundColor: blue,
                       foregroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(vm.botonLabel),
+                    child: Text(textoBoton),
                   ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
               ],
             ),
           ],
@@ -272,22 +306,32 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
       builder: (_) => Dialog(
         backgroundColor: Colors.white,
         insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: blue, width: 2),
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'CONFIRMAR PAGO',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black, // texto en negro
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
               Text(
                 '¿Registrar pago de la cuota $cuota por S/${monto.toStringAsFixed(2)}?',
                 textAlign: TextAlign.justify,
-                style: const TextStyle(fontSize: 14),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.black, // texto en negro
+                ),
               ),
               const SizedBox(height: 16),
               ConstrainedBox(
@@ -299,13 +343,24 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       obsLocal = t.trim().isEmpty ? null : t.trim(),
                   decoration: InputDecoration(
                     hintText: 'Observaciones (opcional)',
+                    hintStyle: TextStyle(color: Colors.black.withOpacity(0.6)),
                     isDense: true,
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: blue),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: blue),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: blue, width: 2),
                     ),
                   ),
+                  style: TextStyle(color: Colors.black),
                 ),
               ),
               const SizedBox(height: 24),
@@ -313,12 +368,26 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancelar')),
+                    onPressed: () => Navigator.pop(context, false),
+                    child: Text(
+                      'Cancelar',
+                      style: TextStyle(color: Colors.black),
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Confirmar')),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: blue,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context, true),
+                    child: Text(
+                      'Confirmar',
+                      style: const TextStyle(color: Colors.black),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -332,6 +401,176 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
       return true;
     }
     return false;
+  }
+
+  Future<void> _showNuevoCreditoDialog(BuildContext context) async {
+    final vm = context.read<TarjetaClienteViewModel>();
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setState) {
+          // ——— 1) Calculamos flags antes de construir los widgets ———
+          final montoValido = vm.nuevoMontoSolicitado > 0;
+          final fechaValida = vm.nuevaFechaPrimerPago != null;
+          // (Si necesitas validar plazo: final plazoValido = vm.nuevoPlazo > 0;)
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: blue, width: 2),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'NUEVO CRÉDITO',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 1) Monto
+                  TextFormField(
+                    decoration:
+                        const InputDecoration(labelText: 'Monto solicitado'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) {
+                      vm.setNuevoMonto(double.tryParse(v) ?? 0);
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 2) Plazo
+                  DropdownButtonFormField<int>(
+                    value: vm.nuevoPlazo,
+                    decoration:
+                        const InputDecoration(labelText: 'Plazo (días)'),
+                    items: [12, 24]
+                        .map((d) =>
+                            DropdownMenuItem(value: d, child: Text('$d días')))
+                        .toList(),
+                    onChanged: (d) {
+                      vm.setNuevoPlazo(d!);
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 3) Fecha primer pago
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          'Fecha primer pago:',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          vm.nuevaFechaPrimerPago == null
+                              ? '-'
+                              : '${vm.nuevaFechaPrimerPago!.day.toString().padLeft(2, '0')}/'
+                                  '${vm.nuevaFechaPrimerPago!.month.toString().padLeft(2, '0')}/'
+                                  '${vm.nuevaFechaPrimerPago!.year}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await vm.pickNuevaFechaPrimerPago(ctx);
+                          setState(() {});
+                        },
+                        child: const Text('Seleccionar'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 4) Preview de totales (solo si monto y fecha válidos)
+                  if (montoValido && fechaValida) ...[
+                    _buildPreviewRow(
+                      'Total a pagar:',
+                      'S/${vm.nuevoTotalPagar.toStringAsFixed(2)}',
+                    ),
+                    _buildPreviewRow(
+                      'Cuota diaria:',
+                      'S/${vm.nuevaCuotaDiaria.toStringAsFixed(2)}',
+                    ),
+                    if (vm.nuevaUltimaCuota != vm.nuevaCuotaDiaria)
+                      _buildPreviewRow(
+                        'Última cuota:',
+                        'S/${vm.nuevaUltimaCuota.toStringAsFixed(2)}',
+                      ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // 5) Botones de acción
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancelar'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: montoValido && fechaValida
+                            ? () async {
+                                debugPrint(
+                                    '🔔 [UI] Botón Confirmar Nuevo Crédito pulsado');
+                                Navigator.pop(ctx);
+
+                                debugPrint(
+                                    '🔔 [UI] Llamando vm.confirmarNuevoCredito()...');
+                                final ok = await vm.confirmarNuevoCredito();
+
+                                debugPrint(
+                                    '🔔 [UI] confirmarNuevoCredito() devolvió: $ok');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(ok
+                                        ? 'Crédito creado'
+                                        : 'Error al crear crédito'),
+                                  ),
+                                );
+                              }
+                            : null,
+                        // resto del estilo…
+                        child: const Text('Confirmar'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPreviewRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Expanded(
+            flex: 4,
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w500))),
+        Expanded(flex: 6, child: Text(value, textAlign: TextAlign.right)),
+      ]),
+    );
   }
 
   void _showHistorialDialog(

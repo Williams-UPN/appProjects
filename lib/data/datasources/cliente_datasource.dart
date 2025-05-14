@@ -25,6 +25,13 @@ abstract class ClienteDatasource {
   Future<List<HistorialRead>> fetchHistoriales(int clienteId);
   Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
   Future<bool> registrarEvento(int clienteId, String descripcion);
+
+  Future<bool> nuevoCreditoRpc({
+    required int clienteId,
+    required double montoSolicitado,
+    required int plazoDias,
+    required String fechaPrimerPago, // formato "YYYY-MM-DD"
+  });
 }
 
 class SupabaseClienteDatasource implements ClienteDatasource {
@@ -201,6 +208,32 @@ class SupabaseClienteDatasource implements ClienteDatasource {
       return true;
     } catch (e) {
       debugPrint('❌ [DS] Error registrarEvento: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> nuevoCreditoRpc({
+    required int clienteId,
+    required double montoSolicitado,
+    required int plazoDias,
+    required String fechaPrimerPago,
+  }) async {
+    debugPrint('🔔 [DS] llamando abrir_nuevo_credito RPC → '
+        'clienteId=$clienteId, monto=$montoSolicitado, '
+        'plazo=$plazoDias, fecha=$fechaPrimerPago');
+    try {
+      // Si tu función no retorna nada, no hace falta asignar
+      await _supabase.rpc('abrir_nuevo_credito', params: {
+        'p_cliente_id': clienteId,
+        'p_monto_solicitado': montoSolicitado,
+        'p_plazo_dias': plazoDias,
+        'p_fecha_primer_pago': fechaPrimerPago,
+      });
+      debugPrint('✅ [DS] abrir_nuevo_credito OK');
+      return true;
+    } catch (e, st) {
+      debugPrint('❌ [DS] abrir_nuevo_credito ERROR: $e\n$st');
       return false;
     }
   }

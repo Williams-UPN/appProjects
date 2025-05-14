@@ -454,6 +454,33 @@ $$;
 ALTER FUNCTION "public"."_validar_y_recalcular_cliente"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."abrir_nuevo_credito"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date") RETURNS "void"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  -- Archiva el crédito anterior
+  PERFORM public.crear_historial_cerrado(p_cliente_id);
+
+  -- Limpia pagos y cronograma
+  DELETE FROM public.pagos     WHERE cliente_id = p_cliente_id;
+  DELETE FROM public.cronograma WHERE cliente_id = p_cliente_id;
+
+  -- Actualiza la fila clientes (dispara _trigger_refinanciar_cliente)
+  UPDATE public.clientes
+     SET monto_solicitado  = p_monto_solicitado,
+         plazo_dias        = p_plazo_dias,
+         fecha_primer_pago = p_fecha_primer_pago
+   WHERE id = p_cliente_id;
+
+  -- Ya NO llamamos manualmente a _crear_cronograma_aux,
+  -- porque el trigger lo hizo por nosotros.
+END;
+$$;
+
+
+ALTER FUNCTION "public"."abrir_nuevo_credito"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."actualizar_estado_cliente"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -576,6 +603,32 @@ $$;
 
 
 ALTER FUNCTION "public"."crear_cronograma_para_cliente"("p_cliente_id" bigint) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) RETURNS "void"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  v_cli RECORD;
+BEGIN
+  -- Cargamos solo lo que necesitamos de la tabla clientes
+  SELECT monto_solicitado, fecha_primer_pago, plazo_dias
+    INTO v_cli
+    FROM public.clientes
+   WHERE id = p_cliente_id;
+
+  -- Llamamos a la función existente de 4 parámetros
+  PERFORM public.crear_historial_cerrado(
+    p_cliente_id,
+    v_cli.monto_solicitado,
+    v_cli.fecha_primer_pago,
+    v_cli.plazo_dias
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint, "p_monto_orig" numeric, "p_fecha_inicio" "date", "p_plazo_dias" integer) RETURNS "void"
@@ -1516,6 +1569,12 @@ GRANT ALL ON FUNCTION "public"."_validar_y_recalcular_cliente"() TO "service_rol
 
 
 
+GRANT ALL ON FUNCTION "public"."abrir_nuevo_credito"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date") TO "anon";
+GRANT ALL ON FUNCTION "public"."abrir_nuevo_credito"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."abrir_nuevo_credito"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."actualizar_estado_cliente"() TO "anon";
 GRANT ALL ON FUNCTION "public"."actualizar_estado_cliente"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."actualizar_estado_cliente"() TO "service_role";
@@ -1531,6 +1590,12 @@ GRANT ALL ON FUNCTION "public"."actualizar_saldo_cliente"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."crear_cronograma_para_cliente"("p_cliente_id" bigint) TO "anon";
 GRANT ALL ON FUNCTION "public"."crear_cronograma_para_cliente"("p_cliente_id" bigint) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."crear_cronograma_para_cliente"("p_cliente_id" bigint) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) TO "anon";
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) TO "service_role";
 
 
 

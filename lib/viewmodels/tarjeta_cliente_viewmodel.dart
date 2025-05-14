@@ -25,6 +25,9 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   double _nuevoSaldoPendiente = 0.0;
   double _nuevaCuotaDiaria = 0.0;
   double _nuevaUltimaCuota = 0.0;
+  double _nuevoMontoSolicitado = 0.0;
+  int _nuevoPlazo = 12;
+  DateTime? _nuevaFechaPrimerPago;
 
   // Getters básicos
   bool get isLoading => _isLoading;
@@ -43,6 +46,18 @@ class TarjetaClienteViewModel extends ChangeNotifier {
   double get nuevoSaldoPendienteDisplay => _nuevoSaldoPendiente;
   double get nuevaCuotaDiariaDisplay => _nuevaCuotaDiaria;
 
+  // ─────────────────────────────────────────────────────
+// Getters para Nuevo Crédito
+  int get nuevoPlazo => _nuevoPlazo;
+  DateTime? get nuevaFechaPrimerPago => _nuevaFechaPrimerPago;
+  double get nuevoMontoSolicitado => _nuevoMontoSolicitado;
+  double get nuevoTotalPagar =>
+      _nuevoMontoSolicitado * (1 + (_nuevoPlazo == 12 ? 0.10 : 0.20));
+  double get nuevaCuotaDiaria => (nuevoTotalPagar / _nuevoPlazo).ceilToDouble();
+  double get nuevaUltimaCuota =>
+      nuevoTotalPagar - nuevaCuotaDiaria * (_nuevoPlazo - 1);
+// ─────────────────────────────────────────────────────
+
   /// 1) Estado de crédito completo
   bool get isCreditComplete => _cliente?.estadoReal == 'completo';
 
@@ -50,6 +65,8 @@ class TarjetaClienteViewModel extends ChangeNotifier {
       !isCreditComplete && _cliente != null;
 
   double get nuevaUltimaCuotaDisplay => _nuevaUltimaCuota;
+
+  bool get puedeIniciarNuevoCredito => isCreditComplete && _cliente != null;
 
   /// 2) Calcula cuál es la cuota “de hoy” (la siguiente no pagada).
   int get cuotaHoy {
@@ -248,6 +265,71 @@ class TarjetaClienteViewModel extends ChangeNotifier {
 
   void setPlazoRefinanciar(int plazo) {
     _plazoRefinanciar = plazo;
+    notifyListeners();
+  }
+
+  // Setters
+  void setNuevoMonto(double m) {
+    _nuevoMontoSolicitado = m;
+    notifyListeners();
+  }
+
+  void setNuevoPlazo(int p) {
+    _nuevoPlazo = p;
+    notifyListeners();
+  }
+
+  Future<void> pickNuevaFechaPrimerPago(BuildContext ctx) async {
+    final d = await showDatePicker(
+      context: ctx,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (d != null) {
+      _nuevaFechaPrimerPago = d;
+      notifyListeners();
+    }
+  }
+
+  /// Llama al repo para crear el crédito y recarga datos
+  Future<bool> confirmarNuevoCredito() async {
+    debugPrint('🔔 [VM] confirmarNuevoCredito → '
+        'monto=$_nuevoMontoSolicitado, plazo=$_nuevoPlazo, '
+        'fecha=$_nuevaFechaPrimerPago');
+
+    if (_cliente == null || _nuevaFechaPrimerPago == null) {
+      debugPrint('⚠️ [VM] confirmarNuevoCredito: datos incompletos');
+      return false;
+    }
+
+    _isLoading = true;
+    notifyListeners();
+
+    final ok = await _repo.nuevoCredito(
+      _cliente!.id,
+      _nuevoMontoSolicitado,
+      _nuevoPlazo,
+      _nuevaFechaPrimerPago!,
+    );
+
+    debugPrint('🔔 [VM] resultado confirmarNuevoCredito: $ok');
+
+    if (ok) {
+      debugPrint('🔔 [VM] nuevo crédito OK, recargando datos...');
+      await loadData(_cliente!.id);
+    }
+
+    _isLoading = false;
+    notifyListeners();
+    return ok;
+  }
+
+  // Agregar justo después de confirmarNuevoCredito()
+  void iniciarNuevoCredito() {
+    _nuevoMontoSolicitado = 0.0;
+    _nuevoPlazo = 12;
+    _nuevaFechaPrimerPago = null;
     notifyListeners();
   }
 }
