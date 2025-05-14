@@ -130,80 +130,30 @@ CREATE OR REPLACE FUNCTION "public"."_trigger_actualizar_estado"() RETURNS "trig
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
-  cid             BIGINT := COALESCE(NEW.cliente_id, OLD.cliente_id);
-  v_hoy           DATE   := (now() AT TIME ZONE 'America/Lima')::date;
-  cuotas_venc     INTEGER;
-  cuota_hoy_pend  BOOLEAN;
-  todas_pagadas   BOOLEAN;
-  ult_pag_num     INTEGER;
-  total_pagado    NUMERIC;
-  est_final       TEXT;
-  v_fp            DATE;
+  cid bigint := COALESCE(NEW.cliente_id, OLD.cliente_id);
+  total_pagado numeric;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     UPDATE public.cronograma
-      SET fecha_pagado = (NEW.fecha_pago AT TIME ZONE 'America/Lima')::date
-     WHERE cliente_id = cid
-       AND numero_cuota = NEW.numero_cuota;
+      SET fecha_pagado = NEW.fecha_pago::date
+    WHERE cliente_id = cid
+      AND numero_cuota = NEW.numero_cuota;
   ELSE
     UPDATE public.cronograma
       SET fecha_pagado = NULL
-     WHERE cliente_id = cid
-       AND numero_cuota = OLD.numero_cuota;
+    WHERE cliente_id = cid
+      AND numero_cuota = OLD.numero_cuota;
   END IF;
-
-  SELECT (fecha_primer_pago AT TIME ZONE 'America/Lima')::date
-    INTO v_fp
-    FROM public.clientes
-   WHERE id = cid;
-
-  SELECT COUNT(*) INTO cuotas_venc
-    FROM public.cronograma
-   WHERE cliente_id = cid
-     AND fecha_venc < v_hoy
-     AND fecha_pagado IS NULL;
-
-  SELECT EXISTS(
-    SELECT 1 FROM public.cronograma
-     WHERE cliente_id = cid
-       AND fecha_venc = v_hoy
-       AND fecha_pagado IS NULL
-  ) INTO cuota_hoy_pend;
-
-  SELECT NOT EXISTS(
-    SELECT 1 FROM public.cronograma
-     WHERE cliente_id = cid
-       AND fecha_pagado IS NULL
-  ) INTO todas_pagadas;
-
-  SELECT COALESCE(MAX(numero_cuota),0) INTO ult_pag_num
-    FROM public.cronograma
-   WHERE cliente_id = cid
-     AND fecha_pagado IS NOT NULL;
 
   SELECT COALESCE(SUM(monto_pagado),0) INTO total_pagado
     FROM public.pagos
    WHERE cliente_id = cid;
 
-  IF v_fp > v_hoy THEN
-    est_final := 'proximo';
-  ELSE
-    est_final := CASE
-      WHEN todas_pagadas    THEN 'completo'
-      WHEN cuotas_venc > 0  THEN 'atrasado'
-      WHEN cuota_hoy_pend   THEN 'pendiente'
-      ELSE 'al_dia'
-    END;
-  END IF;
-
   UPDATE public.clientes
-    SET estado_pago          = est_final,
-        dias_atraso          = cuotas_venc,
-        saldo_pendiente      = total_pagar - total_pagado,
-        ultima_cuota_numero  = ult_pag_num
+     SET saldo_pendiente = total_pagar - total_pagado
    WHERE id = cid;
 
-  RETURN COALESCE(NEW,OLD);
+  RETURN COALESCE(NEW, OLD);
 END;
 $$;
 
@@ -319,6 +269,90 @@ $$;
 ALTER FUNCTION "public"."_trigger_log_pago"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_trigger_refinanciar_cliente"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  v_total_pagado NUMERIC;
+  v_max_atraso   INTEGER;
+  v_count_incid  INTEGER;
+  v_fecha_inicio DATE;
+BEGIN
+  -- Métricas del crédito antiguo
+  SELECT
+    COALESCE(SUM(p.monto_pagado),0),
+    COALESCE(MAX(GREATEST(
+      (p.fecha_pago AT TIME ZONE 'America/Lima')::date
+      - cr.fecha_venc, 0
+    )),0),
+    COUNT(*)
+  INTO v_total_pagado, v_max_atraso, v_count_incid
+  FROM public.pagos p
+  JOIN public.cronograma cr
+    ON p.cliente_id = cr.cliente_id
+   AND p.numero_cuota = cr.numero_cuota
+  WHERE p.cliente_id = OLD.id;
+
+  -- Fecha de inicio original
+  SELECT MIN(fecha_venc)
+    INTO v_fecha_inicio
+  FROM public.cronograma
+  WHERE cliente_id = OLD.id;
+
+  -- Archiva en historial
+  INSERT INTO public.cliente_historial(
+    cliente_id, fecha_inicio, fecha_cierre,
+    monto_solicitado, total_pagado,
+    dias_totales, dias_atraso_max,
+    incidencias, observaciones, calificacion
+  ) VALUES (
+    OLD.id,
+    v_fecha_inicio,
+    now(),
+    OLD.monto_solicitado,
+    v_total_pagado,
+    OLD.plazo_dias,
+    v_max_atraso,
+    v_count_incid,
+    NULL,
+    GREATEST(0, LEAST(100, 100 - v_max_atraso*2 - v_count_incid*5))
+  );
+
+  -- *** Nuevo paso: eliminar todos los pagos del viejo crédito
+  DELETE FROM public.pagos
+   WHERE cliente_id = OLD.id;
+
+  -- Regenera cronograma limpio
+  DELETE FROM public.cronograma WHERE cliente_id = OLD.id;
+  PERFORM public._crear_cronograma_aux(NEW.id);
+
+  -- Evento de refinanciamiento
+  INSERT INTO public.historial_eventos(
+    cliente_id, tipo_evento, descripcion
+  ) VALUES (
+    OLD.id,
+    'Refinanciamiento',
+    format(
+      'Refinanciado a S/%s en %s días (nuevo inicio %s)',
+      to_char(NEW.monto_solicitado,'FM999999.00'),
+      NEW.plazo_dias,
+      (NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date
+    )
+  );
+
+  -- Ajusta saldo pendiente al nuevo total
+  UPDATE public.clientes
+     SET saldo_pendiente = NEW.total_pagar
+   WHERE id = NEW.id;
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."_trigger_refinanciar_cliente"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_trigger_regenerar_cronograma"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -387,26 +421,30 @@ DECLARE
   v_total  NUMERIC;
   v_std    NUMERIC;
   v_last   NUMERIC;
-  v_today  DATE := (now() AT TIME ZONE 'America/Lima')::date;
+  -- calculamos hoy en Lima convirtiendo desde UTC
+  v_today  DATE := ((now() AT TIME ZONE 'UTC') AT TIME ZONE 'America/Lima')::date;
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    IF (NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date < v_today THEN
+    -- en un INSERT normal nos aseguramos de que la fecha_primer_pago sea ≥ hoy (Lima)
+    IF (NEW.fecha_primer_pago AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date < v_today THEN
       RAISE EXCEPTION
         'fecha_primer_pago (%) debe ser ≥ hoy (Lima: %)',
         NEW.fecha_primer_pago,
         v_today;
     END IF;
   ELSE
-    -- refinanciamiento: arrancar de nuevo hoy
-    NEW.fecha_primer_pago := now();
+    -- en un UPDATE (es decir, refinanciamiento), reiniciamos primer pago a ahora mismo en Lima
+    NEW.fecha_primer_pago := (now() AT TIME ZONE 'UTC') AT TIME ZONE 'America/Lima';
   END IF;
 
+  -- validaciones estándar
   IF NEW.monto_solicitado <= 0 THEN
     RAISE EXCEPTION 'monto_solicitado (%) debe ser > 0', NEW.monto_solicitado;
-  ELSIF NEW.plazo_dias NOT IN (12,24) THEN
+  ELSIF NEW.plazo_dias NOT IN (12, 24) THEN
     RAISE EXCEPTION 'plazo_dias (%) inválido', NEW.plazo_dias;
   END IF;
 
+  -- cálculos de total, cuotas
   v_tasa  := CASE WHEN NEW.plazo_dias = 12 THEN 10 ELSE 20 END;
   v_total := NEW.monto_solicitado * (1 + v_tasa/100);
   v_std   := ceil(v_total / NEW.plazo_dias);
@@ -415,8 +453,8 @@ BEGIN
   NEW.total_pagar         := v_total;
   NEW.cuota_diaria        := v_std;
   NEW.ultima_cuota        := v_last;
-  NEW.fecha_final         := ((NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date
-                             + (NEW.plazo_dias-1) * INTERVAL '1 day');
+  NEW.fecha_final         := (NEW.fecha_primer_pago::date
+                              + (NEW.plazo_dias - 1) * INTERVAL '1 day');
   NEW.ultima_cuota_numero := 0;
 
   RETURN NEW;
@@ -551,7 +589,64 @@ $$;
 ALTER FUNCTION "public"."crear_cronograma_para_cliente"("p_cliente_id" bigint) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint, "p_monto_orig" numeric, "p_fecha_inicio" "date", "p_plazo_dias" integer) RETURNS "void"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  v_total_pagado numeric;
+  v_max_atraso   integer;
+  v_count_incid  integer;
+  v_score        integer;
+BEGIN
+  -- total pagado hasta ahora
+  SELECT COALESCE(SUM(monto_pagado),0) INTO v_total_pagado
+    FROM public.pagos
+   WHERE cliente_id = p_cliente_id;
+
+  -- máximo atraso (nunca negativo)
+  SELECT COALESCE(MAX(GREATEST((p.fecha_pago::date - cr.fecha_venc),0)),0)
+    INTO v_max_atraso
+    FROM public.pagos p
+    JOIN public.cronograma cr
+      ON p.cliente_id = cr.cliente_id
+     AND p.numero_cuota = cr.numero_cuota
+   WHERE p.cliente_id = p_cliente_id;
+
+  -- incidencias
+  SELECT COUNT(*) INTO v_count_incid
+    FROM public.historial_eventos
+   WHERE cliente_id = p_cliente_id
+     AND tipo_evento = 'Incidencia';
+
+  -- score
+  v_score := GREATEST(0, LEAST(100, 100 - v_max_atraso*2 - v_count_incid*5));
+
+  -- inserta usando los parámetros antiguos
+  INSERT INTO public.cliente_historial(
+    cliente_id, fecha_inicio, fecha_cierre,
+    monto_solicitado, total_pagado,
+    dias_totales, dias_atraso_max,
+    incidencias, observaciones, calificacion
+  ) VALUES (
+    p_cliente_id,
+    p_fecha_inicio,
+    now(),
+    p_monto_orig,
+    v_total_pagado,
+    p_plazo_dias,
+    v_max_atraso,
+    v_count_incid,
+    NULL,
+    v_score
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint, "p_monto_orig" numeric, "p_fecha_inicio" "date", "p_plazo_dias" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) RETURNS "void"
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
@@ -627,7 +722,7 @@ END;
 $$;
 
 
-ALTER FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) OWNER TO "postgres";
+ALTER FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."recalcular_datos_cliente"() RETURNS "trigger"
@@ -1112,19 +1207,11 @@ CREATE OR REPLACE TRIGGER "trg_clientes_ai" AFTER INSERT ON "public"."clientes" 
 
 
 
-CREATE OR REPLACE TRIGGER "trg_clientes_au" AFTER UPDATE ON "public"."clientes" FOR EACH ROW WHEN ((("old"."monto_solicitado" IS DISTINCT FROM "new"."monto_solicitado") OR ("old"."plazo_dias" IS DISTINCT FROM "new"."plazo_dias") OR ("old"."fecha_primer_pago" IS DISTINCT FROM "new"."fecha_primer_pago"))) EXECUTE FUNCTION "public"."_trigger_regenerar_cronograma"();
-
-
-
 CREATE OR REPLACE TRIGGER "trg_clientes_bi" BEFORE INSERT ON "public"."clientes" FOR EACH ROW EXECUTE FUNCTION "public"."_validar_y_recalcular_cliente"();
 
 
 
-CREATE OR REPLACE TRIGGER "trg_clientes_refi_cierre" BEFORE UPDATE ON "public"."clientes" FOR EACH ROW WHEN ((("old"."monto_solicitado" IS DISTINCT FROM "new"."monto_solicitado") OR ("old"."plazo_dias" IS DISTINCT FROM "new"."plazo_dias"))) EXECUTE FUNCTION "public"."_trigger_cierre_por_refi"();
-
-
-
-CREATE OR REPLACE TRIGGER "trg_clientes_term_update" BEFORE UPDATE ON "public"."clientes" FOR EACH ROW WHEN ((("new"."monto_solicitado" IS DISTINCT FROM "old"."monto_solicitado") OR ("new"."plazo_dias" IS DISTINCT FROM "old"."plazo_dias"))) EXECUTE FUNCTION "public"."_validar_y_recalcular_cliente"();
+CREATE OR REPLACE TRIGGER "trg_clientes_term_update" BEFORE UPDATE ON "public"."clientes" FOR EACH ROW WHEN ((("old"."monto_solicitado" IS DISTINCT FROM "new"."monto_solicitado") OR ("old"."plazo_dias" IS DISTINCT FROM "new"."plazo_dias"))) EXECUTE FUNCTION "public"."_validar_y_recalcular_cliente"();
 
 
 
@@ -1137,6 +1224,10 @@ CREATE OR REPLACE TRIGGER "trg_pagos_aiud" AFTER INSERT OR DELETE ON "public"."p
 
 
 CREATE OR REPLACE TRIGGER "trg_pagos_cierre" AFTER INSERT ON "public"."pagos" FOR EACH ROW EXECUTE FUNCTION "public"."_trigger_cierre_historial"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_refinanciar_cliente" AFTER UPDATE OF "monto_solicitado", "plazo_dias", "fecha_primer_pago" ON "public"."clientes" FOR EACH ROW WHEN ((("old"."monto_solicitado" IS DISTINCT FROM "new"."monto_solicitado") OR ("old"."plazo_dias" IS DISTINCT FROM "new"."plazo_dias") OR ("old"."fecha_primer_pago" IS DISTINCT FROM "new"."fecha_primer_pago"))) EXECUTE FUNCTION "public"."_trigger_refinanciar_cliente"();
 
 
 
@@ -1382,6 +1473,12 @@ GRANT ALL ON FUNCTION "public"."_trigger_log_pago"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."_trigger_refinanciar_cliente"() TO "anon";
+GRANT ALL ON FUNCTION "public"."_trigger_refinanciar_cliente"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."_trigger_refinanciar_cliente"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."_trigger_regenerar_cronograma"() TO "anon";
 GRANT ALL ON FUNCTION "public"."_trigger_regenerar_cronograma"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."_trigger_regenerar_cronograma"() TO "service_role";
@@ -1418,9 +1515,15 @@ GRANT ALL ON FUNCTION "public"."crear_cronograma_para_cliente"("p_cliente_id" bi
 
 
 
-GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) TO "anon";
-GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint) TO "service_role";
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint, "p_monto_orig" numeric, "p_fecha_inicio" "date", "p_plazo_dias" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint, "p_monto_orig" numeric, "p_fecha_inicio" "date", "p_plazo_dias" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint, "p_monto_orig" numeric, "p_fecha_inicio" "date", "p_plazo_dias" integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) TO "anon";
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) TO "service_role";
 
 
 

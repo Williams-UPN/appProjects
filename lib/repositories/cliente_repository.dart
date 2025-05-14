@@ -111,23 +111,34 @@ class ClienteRepositoryImpl implements ClienteRepository {
   Future<bool> refinanciar(
       int clienteId, double montoAdicional, int plazoDias) async {
     try {
-      // 1) Leemos el saldo pendiente actual
+      debugPrint('🔔 [Repo] INICIANDO refinanciar: '
+          'clienteId=$clienteId, montoAdicional=$montoAdicional, plazoDias=$plazoDias');
+
+      // 1) Leer el saldo pendiente actual
       final record = await _supabase
           .from('clientes')
           .select('saldo_pendiente')
           .eq('id', clienteId)
           .single();
       final currentSaldo = (record['saldo_pendiente'] as num).toDouble();
+      debugPrint('🔍 [Repo] saldo_pendiente actual = $currentSaldo');
 
-      // 2) Calculamos el nuevo monto_solicitado
+      // 2) Calcular el nuevo monto_solicitado
       final nuevoMonto = currentSaldo + montoAdicional;
+      debugPrint('🔍 [Repo] nuevo monto_solicitado = $nuevoMonto');
 
-      // 3) Disparamos el UPDATE sobre clientes
-      await _supabase.from('clientes').update({
+      // 3) Preparar payload de UPDATE
+      final payload = {
         'monto_solicitado': nuevoMonto,
         'plazo_dias': plazoDias,
         'fecha_primer_pago': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', clienteId);
+      };
+      debugPrint('✏️ [Repo] payload UPDATE clientes: $payload');
+
+      // 4) Ejecutar UPDATE
+      final res =
+          await _supabase.from('clientes').update(payload).eq('id', clienteId);
+      debugPrint('✅ [Repo] UPDATE refinanciar devolvió: $res');
 
       return true;
     } catch (e) {

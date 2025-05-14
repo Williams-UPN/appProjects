@@ -131,20 +131,23 @@ class SupabaseClienteDatasource implements ClienteDatasource {
 
   @override
   Future<List<HistorialRead>> fetchHistoriales(int clienteId) async {
+    debugPrint('🔔 [DS] fetchHistoriales START para clienteId=$clienteId');
+
     final raw = await _supabase
         .from('v_creditos_cerrados')
-        .select('fecha_inicio, '
-            'fecha_cierre_real, '
-            'monto_solicitado, '
-            'total_pagado, '
-            'dias_totales, '
-            'dias_atraso_max')
+        .select(
+            'fecha_inicio, fecha_cierre_real, monto_solicitado, total_pagado, dias_totales, dias_atraso_max')
         .eq('credito_id', clienteId)
         .order('fecha_cierre_real', ascending: true);
 
-    return (raw as List)
+    debugPrint('🔍 [DS] v_creditos_cerrados raw = $raw');
+
+    final list = (raw as List)
         .map((m) => HistorialRead.fromMap(m as Map<String, dynamic>))
         .toList();
+
+    debugPrint('✅ [DS] fetchHistoriales devolvió ${list.length} registros');
+    return list;
   }
 
   @override
