@@ -173,7 +173,7 @@ class TarjetaClienteViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> registrarPago() async {
+  Future<bool> registrarPago({String? observaciones}) async {
     if (_cliente == null || _cuotaSeleccionada == null) return false;
     final numero = _cuotaSeleccionada!;
     final monto = numero == _cliente!.plazoDias

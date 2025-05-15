@@ -55,7 +55,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     debugPrint('🔔 [UI] Usuario confirmó pago de cuota $cuota');
 
     // 2) Registra el pago
-    final success = await vm.registrarPago();
+    final success = await vm.registrarPago(observaciones: _lastObservaciones);
     debugPrint('🔔 [UI] registrarPago() devolvió: $success');
 
     // 3) Muestra un SnackBar de resultado
@@ -343,6 +343,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       obsLocal = t.trim().isEmpty ? null : t.trim(),
                   decoration: InputDecoration(
                     hintText: 'Observaciones (opcional)',
+                    // ignore: deprecated_member_use
                     hintStyle: TextStyle(color: Colors.black.withOpacity(0.6)),
                     isDense: true,
                     contentPadding:
@@ -537,6 +538,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
 
                                 debugPrint(
                                     '🔔 [UI] confirmarNuevoCredito() devolvió: $ok');
+                                // ignore: use_build_context_synchronously
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(ok
