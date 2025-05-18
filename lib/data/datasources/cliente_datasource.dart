@@ -51,7 +51,8 @@ class SupabaseClienteDatasource implements ClienteDatasource {
     final raw = await _supabase
         .from('v_clientes_con_estado')
         .select('id, nombre, telefono, direccion, negocio, '
-            'estado_real, dias_reales, score_actual, has_history')
+            'estado_real, dias_reales, score_actual, has_history, '
+            'latitud, longitud') // <--- MODIFICADO AQUÍ
         .order('id', ascending: true)
         .range(from, to);
     debugPrint('🔍 [DS] fetchClientes raw = $raw');
@@ -75,7 +76,8 @@ class SupabaseClienteDatasource implements ClienteDatasource {
     final raw = await _supabase
         .from('v_clientes_con_estado')
         .select('id, nombre, telefono, direccion, negocio, '
-            'estado_real, dias_reales, score_actual, has_history')
+            'estado_real, dias_reales, score_actual, has_history, '
+            'latitud, longitud') // <--- MODIFICADO AQUÍ
         .or('nombre.ilike.$filter,telefono.ilike.$filter,negocio.ilike.$filter')
         .order('id', ascending: true)
         .range(from, to);
@@ -97,7 +99,8 @@ class SupabaseClienteDatasource implements ClienteDatasource {
     final raw = await _supabase
         .from('v_clientes_con_estado')
         .select('id, nombre, telefono, direccion, negocio, '
-            'estado_real, dias_reales, score_actual, has_history')
+            'estado_real, dias_reales, score_actual, has_history, '
+            'latitud, longitud') // <--- MODIFICADO AQUÍ
         .gt('dias_reales', 0)
         .order('dias_reales', ascending: true)
         .order('id', ascending: true)
@@ -118,7 +121,8 @@ class SupabaseClienteDatasource implements ClienteDatasource {
         .select('id, nombre, telefono, direccion, negocio, '
             'estado_real, dias_reales, score_actual, has_history, '
             'monto_solicitado, fecha_primer_pago, cuota_diaria, '
-            'ultima_cuota, plazo_dias, saldo_pendiente')
+            'ultima_cuota, plazo_dias, saldo_pendiente, '
+            'latitud, longitud') // <--- MODIFICADO AQUÍ (asegúrate que la coma anterior esté)
         .eq('id', id)
         .single();
     debugPrint('🔍 [DS] fetchClienteById raw = $raw');
@@ -161,13 +165,17 @@ class SupabaseClienteDatasource implements ClienteDatasource {
   @override
   Future<List<HistorialRead>> fetchHistoriales(int clienteId) async {
     debugPrint('🔔 [DS] fetchHistoriales(clienteId: $clienteId)');
+    // Nota: v_creditos_cerrados probablemente también necesite ser actualizada
+    // si quieres mostrar latitud/longitud del historial.
+    // Por ahora, esta función no parece necesitar lat/lng directamente.
     final raw = await _supabase
         .from('v_creditos_cerrados')
         .select(
           'fecha_inicio, fecha_cierre_real, monto_solicitado, '
           'total_pagado, dias_totales, dias_atraso_max',
         )
-        .eq('credito_id', clienteId)
+        .eq('credito_id',
+            clienteId) // Asumiendo que el ID en v_creditos_cerrados se llama credito_id
         .order('fecha_cierre_real', ascending: true);
     debugPrint('🔍 [DS] fetchHistoriales raw = $raw');
     final list = (raw as List)
@@ -223,7 +231,6 @@ class SupabaseClienteDatasource implements ClienteDatasource {
         'clienteId=$clienteId, monto=$montoSolicitado, '
         'plazo=$plazoDias, fecha=$fechaPrimerPago');
     try {
-      // Si tu función no retorna nada, no hace falta asignar
       await _supabase.rpc('abrir_nuevo_credito', params: {
         'p_cliente_id': clienteId,
         'p_monto_solicitado': montoSolicitado,

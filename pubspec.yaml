@@ -16,15 +16,11 @@ dependencies:
   url_launcher: ^6.2.1
   path_provider: ^2.1.1
   path: ^1.9.0
+  intl: ^0.20.2
 
   # HTTP y Base de Datos
-  http: ^1.3.0
+  http: ^1.4.0 
   sqflite: ^2.4.2
-
-  # Geolocalización y Mapas
-  geolocator: ^14.0.0
-  flutter_map: ^8.1.1
-  latlong2: ^0.9.1
 
   # Supabase (Backend)
   supabase_flutter: ^2.8.4
@@ -41,7 +37,14 @@ dependencies:
   # Autenticación
   sign_in_with_apple: ^7.0.1
   google_sign_in: ^6.3.0
-  intl: ^0.20.2
+
+  # Geolocalización y Mapas
+  geolocator: ^14.0.0
+  flutter_map: ^8.1.1
+  latlong2: ^0.9.1
+  geocoding: ^3.0.0
+  permission_handler: ^12.0.0+1
+  google_maps_flutter: ^2.5.0
 
 dev_dependencies:
   flutter_test:

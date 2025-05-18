@@ -10,6 +10,8 @@ class ClienteRead {
   final int diasReales;
   final int scoreActual;
   final bool hasHistory;
+  final double? latitud; // Nuevo campo
+  final double? longitud; // Nuevo campo
 
   ClienteRead({
     required this.id,
@@ -21,17 +23,23 @@ class ClienteRead {
     required this.diasReales,
     required this.scoreActual,
     required this.hasHistory,
+    this.latitud, // Añadido al constructor
+    this.longitud, // Añadido al constructor
   });
 
-  factory ClienteRead.fromMap(Map<String, dynamic> m) => ClienteRead(
-        id: m['id'] as int,
-        nombre: m['nombre'] as String,
-        telefono: m['telefono'] as String,
-        direccion: m['direccion'] as String,
-        negocio: m['negocio'] as String? ?? '',
-        estadoReal: m['estado_real'] as String,
-        diasReales: (m['dias_reales'] as num).toInt(),
-        scoreActual: (m['score_actual'] as num).toInt(),
-        hasHistory: m['has_history'] as bool,
-      );
+  factory ClienteRead.fromMap(Map<String, dynamic> m) {
+    return ClienteRead(
+      id: m['id'] as int,
+      nombre: m['nombre'] as String,
+      telefono: m['telefono'] as String,
+      direccion: m['direccion'] as String,
+      negocio: m['negocio'] as String? ?? '',
+      estadoReal: m['estado_real'] as String,
+      diasReales: (m['dias_reales'] as num).toInt(),
+      scoreActual: (m['score_actual'] as num).toInt(),
+      hasHistory: m['has_history'] as bool,
+      latitud: (m['latitud'] as num?)?.toDouble(), // Lectura del nuevo campo
+      longitud: (m['longitud'] as num?)?.toDouble(), // Lectura del nuevo campo
+    );
+  }
 }
