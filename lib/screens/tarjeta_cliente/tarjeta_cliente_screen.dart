@@ -219,7 +219,12 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                         ),
                       ),
                       TextButton.icon(
-                        onPressed: () {},
+                        onPressed: () {
+                          if (vm.cliente != null) {
+                            _abrirMapa(
+                                vm.cliente!.latitud, vm.cliente!.longitud);
+                          }
+                        },
                         icon: const Icon(Icons.location_on, size: 20),
                         label: const Text('Ubicación'),
                         style: TextButton.styleFrom(
@@ -922,5 +927,103 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
     if (fecha == null) return '-';
     return '${fecha.day.toString().padLeft(2, '0')}/'
         '${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
+  }
+
+  Future<void> _abrirMapa(double? lat, double? lng) async {
+    if (lat == null || lng == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Ubicación no disponible para este cliente.')),
+        );
+      }
+      return;
+    }
+
+    final Uri googleMapsUri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query= ($lat,$lng)');
+    final Uri wazeUri = Uri.parse('waze://?ll=$lat,$lng&navigate=yes');
+
+    final bool puedeAbrirGoogleMaps = await canLaunchUrl(googleMapsUri);
+    final bool puedeAbrirWaze = await canLaunchUrl(wazeUri);
+
+    List<Widget> opcionesMapa = [];
+
+    if (puedeAbrirGoogleMaps) {
+      opcionesMapa.add(
+        SimpleDialogOption(
+          onPressed: () {
+            Navigator.pop(context); // Cierra el diálogo
+            launchUrl(googleMapsUri, mode: LaunchMode.externalApplication);
+          },
+          child: const Row(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(right: 8.0),
+                child: Icon(Icons.map_sharp, color: Colors.blue),
+              ),
+              Text('Google Maps'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (puedeAbrirWaze) {
+      opcionesMapa.add(
+        SimpleDialogOption(
+          onPressed: () {
+            Navigator.pop(context); // Cierra el diálogo
+            launchUrl(wazeUri, mode: LaunchMode.externalApplication);
+          },
+          child: const Row(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(right: 8.0),
+                child: Icon(Icons.directions_car,
+                    color: Colors.lightBlueAccent), // Icono genérico para Waze
+              ),
+              Text('Waze'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (opcionesMapa.isEmpty) {
+      final Uri geoUri =
+          Uri.parse('geo:$lat,$lng?q=$lat,$lng(Ubicación del Cliente)');
+      if (await canLaunchUrl(geoUri)) {
+        await launchUrl(geoUri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('No hay aplicaciones de mapas instaladas.')),
+          );
+        }
+      }
+      return;
+    }
+
+    if (opcionesMapa.length == 1) {
+      if (puedeAbrirGoogleMaps) {
+        await launchUrl(googleMapsUri, mode: LaunchMode.externalApplication);
+      } else if (puedeAbrirWaze) {
+        await launchUrl(wazeUri, mode: LaunchMode.externalApplication);
+      }
+    } else {
+      if (mounted) {
+        await showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return SimpleDialog(
+              title: const Text('Abrir ubicación con:'),
+              children: opcionesMapa,
+            );
+          },
+        );
+      }
+    }
   }
 }

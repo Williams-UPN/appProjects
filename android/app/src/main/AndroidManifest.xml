@@ -8,6 +8,7 @@
     <queries>
         <intent>
             <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -17,6 +18,11 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="google.navigation" />
         </intent>
+
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="waze" /> </intent>
+        <package android:name="com.waze" />
     </queries>
 
     <application
