@@ -11,37 +11,31 @@ class ListaClientesViewModel extends ChangeNotifier {
     loadInitial();
   }
 
-  /// La lista de clientes recibida del backend
   List<ClienteRead> clientes = [];
-
-  /// Estado de carga inicial
   bool isLoading = false;
-
-  /// Estado de carga de páginas adicionales
   bool isLoadingMore = false;
-
-  /// Término de búsqueda actual
   String searchTerm = '';
-
-  /// Paginación interna
   int _page = 0;
   static const int _pageSize = 20;
 
-  /// Carga la primera página de clientes
   Future<void> loadInitial() async {
     isLoading = true;
-    notifyListeners();
 
     _page = 0;
+    if (searchTerm.isNotEmpty) {
+      searchTerm = '';
+    }
+
+    notifyListeners();
+
     try {
       clientes = await _repo.fetchClientes(page: 0, size: _pageSize);
     } finally {
       isLoading = false;
-      notifyListeners();
     }
+    notifyListeners();
   }
 
-  /// Carga la siguiente página y la añade al final
   Future<void> loadMore() async {
     if (isLoadingMore) return;
     isLoadingMore = true;
@@ -59,39 +53,47 @@ class ListaClientesViewModel extends ChangeNotifier {
     }
   }
 
-  /// Actualiza el término de búsqueda y realiza una nueva consulta
   Future<void> updateSearch(String term) async {
-    searchTerm = term;
-    notifyListeners();
+    if (term == searchTerm && term.isNotEmpty) {
+      return;
+    }
 
-    if (term.isEmpty) {
-      // si el término queda vacío, volvemos al listado completo
-      await loadInitial();
+    searchTerm =
+        term.toLowerCase(); // Normalizar a minúsculas aquí consistentemente
+
+    if (searchTerm.isEmpty) {
+      notifyListeners(); // Notificar que searchTerm ha cambiado a vacío
+      await loadInitial(); // loadInitial ya maneja isLoading y notifica
     } else {
       isLoading = true;
-      notifyListeners();
+      notifyListeners(); // Notificar que searchTerm cambió y estamos cargando
 
+      _page = 0; // Resetear la página para una nueva búsqueda
       try {
         clientes = await _repo.searchClientes(
-          term: term,
-          page: 0,
+          term: searchTerm, // Usar this.searchTerm ya normalizado
+          page: _page, // Usar _page reseteado
           size: _pageSize,
         );
       } finally {
         isLoading = false;
-        notifyListeners();
+        // notifyListeners(); // El notifyListeners al final de updateSearch es suficiente
       }
     }
+    notifyListeners(); // Notificar después de todas las operaciones de búsqueda/carga
   }
 
-  /// Opcional: filtrado local si prefieres no recargar backend
   List<ClienteRead> get filteredClientes {
     if (searchTerm.isEmpty) return clientes;
-    final lower = searchTerm.toLowerCase();
     return clientes.where((c) {
-      return c.nombre.toLowerCase().contains(lower) ||
-          c.telefono.toLowerCase().contains(lower) ||
-          c.negocio.toLowerCase().contains(lower);
+      return c.nombre
+              .toLowerCase()
+              .contains(searchTerm) || // usar searchTerm directamente
+          (c.telefono.toLowerCase().contains(
+              searchTerm)) || // Añadir chequeo de nulidad para telefono
+          (c.negocio
+              .toLowerCase()
+              .contains(searchTerm)); // Añadir chequeo de nulidad para negocio
     }).toList();
   }
 }
