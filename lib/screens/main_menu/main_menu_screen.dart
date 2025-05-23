@@ -26,7 +26,7 @@ class MainMenuScreen extends StatelessWidget {
           children: [
             MenuButton(
               label: 'Cliente Cercano',
-              onTap: () {/* ruta pendiente */},
+              onTap: () => Navigator.pushNamed(context, '/clientes_cercanos'),
             ),
             MenuButton(
               label: 'Lista de Clientes',

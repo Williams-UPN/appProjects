@@ -30,6 +30,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
   int? _plazoDias;
   DateTime _fechaPrimerPago = DateTime.now();
   int _totalPagar = 0, _cuotaDiaria = 0, _ultimaCuota = 0;
+  String? _direccionConfirmadaDelMapa;
 
   late final ClienteNuevoViewModel _vm;
 
@@ -108,6 +109,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
     _marcadoresMapaEnLinea.clear();
     _posicionCamaraMapaEnLinea =
         const CameraPosition(target: _limaCentro, zoom: 12.0);
+    _direccionConfirmadaDelMapa = null;
 
     if (mounted) {
       setState(() {});
@@ -422,6 +424,8 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
       if (mounted) {
         setState(() {
           _mapaEnLineaVisible = false;
+          // Guardamos la dirección del campo de texto como la "confirmada por el mapa"
+          _direccionConfirmadaDelMapa = _direccionCtrl.text.trim();
         });
       }
     } else {
@@ -440,6 +444,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
         _posicionCamaraMapaEnLinea = const CameraPosition(
             target: _limaCentro, zoom: 12.0); // Resetea cámara
 // Limpia feedback
+        _direccionConfirmadaDelMapa = null;
       });
     }
   }
@@ -553,7 +558,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                       TextFormField(
                         controller: _direccionCtrl,
                         decoration: InputDecoration(
-                          labelText: 'Dirección (Calle, Número, Referencia)',
+                          labelText: 'Dirección del Cliente',
                           suffixIcon: IconButton(
                             icon: Icon(
                               _mapaEnLineaVisible
@@ -571,9 +576,25 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
                                 : _requestLocationPermission,
                           ),
                         ),
-                        validator: (v) => (v == null || v.trim().isEmpty)
-                            ? 'Requerido'
-                            : null,
+                        validator: (v) {
+                          final String textoActualNormalizado = v?.trim() ?? "";
+
+                          if (textoActualNormalizado.isEmpty) {
+                            return 'Requerido: Ingrese una dirección escrita.';
+                          }
+
+                          if (_selectedLocation == null) {
+                            return 'Requerido: Confirme la ubicación en el mapa.';
+                          }
+
+                          if (_direccionConfirmadaDelMapa != null &&
+                              textoActualNormalizado !=
+                                  _direccionConfirmadaDelMapa) {
+                            return 'Dirección incorrecta. El texto no coincide con la ubicación confirmada en el mapa. Por favor, revalide en el mapa.';
+                          }
+
+                          return null; // Pasa todas las validaciones
+                        },
                         maxLines: 2,
                         textCapitalization: TextCapitalization.sentences,
                       ),

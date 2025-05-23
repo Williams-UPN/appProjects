@@ -12,6 +12,7 @@ import 'viewmodels/cliente_nuevo_viewmodel.dart';
 import 'viewmodels/lista_clientes_viewmodel.dart';
 import 'viewmodels/clientes_pendientes_viewmodel.dart';
 import 'viewmodels/tarjeta_cliente_viewmodel.dart';
+import 'viewmodels/clientes_cercanos_viewmodel.dart';
 
 import 'screens/splash.dart';
 import 'screens/main_menu/main_menu_screen.dart';
@@ -19,6 +20,7 @@ import 'screens/lista_de_clientes/lista_de_clientes_screen.dart';
 import 'screens/cliente_nuevo/cliente_nuevo_screen.dart';
 import 'screens/cliente_pendiente/clientes_pendientes_screen.dart';
 import 'screens/tarjeta_cliente/tarjeta_cliente_screen.dart';
+import 'screens/clientes_cercanos/clientes_cercanos_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,6 +62,10 @@ Future<void> main() async {
           create: (ctx) =>
               TarjetaClienteViewModel(ctx.read<ClienteRepository>()),
         ),
+        ChangeNotifierProvider(
+          create: (ctx) => ClientesCercanosViewModel(ctx
+              .read<ClienteRepository>()), // AGREGA EL NUEVO VIEWMODEL PROVIDER
+        ),
       ],
       child: const MyApp(),
     ),
@@ -80,6 +86,7 @@ class MyApp extends StatelessWidget {
         '/lista': (_) => const ListaDeClientesScreen(),
         '/nuevo': (_) => const ClienteNuevoScreen(),
         '/pendientes': (_) => const ClientesPendientesScreen(),
+        '/clientes_cercanos': (_) => const ClientesCercanosScreen(),
 
         // Ahora la ruta detalle toma el clienteId de los argumentos:
         '/detalle': (ctx) {
