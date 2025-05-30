@@ -42,7 +42,7 @@ class MainMenuScreen extends StatelessWidget {
             ),
             MenuButton(
               label: 'Agregar Gastos',
-              onTap: () {/* ruta pendiente */},
+              onTap: () => Navigator.pushNamed(context, '/agregar_gastos'),
             ),
             MenuButton(
               label: 'Reportes',

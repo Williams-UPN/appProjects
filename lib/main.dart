@@ -21,6 +21,7 @@ import 'screens/cliente_nuevo/cliente_nuevo_screen.dart';
 import 'screens/cliente_pendiente/clientes_pendientes_screen.dart';
 import 'screens/tarjeta_cliente/tarjeta_cliente_screen.dart';
 import 'screens/clientes_cercanos/clientes_cercanos_screen.dart';
+import 'screens/agregar_gastos/agregar_gastos_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -87,6 +88,7 @@ class MyApp extends StatelessWidget {
         '/nuevo': (_) => const ClienteNuevoScreen(),
         '/pendientes': (_) => const ClientesPendientesScreen(),
         '/clientes_cercanos': (_) => const ClientesCercanosScreen(),
+        '/agregar_gastos': (_) => const AgregarGastosScreen(),
 
         // Ahora la ruta detalle toma el clienteId de los argumentos:
         '/detalle': (ctx) {
