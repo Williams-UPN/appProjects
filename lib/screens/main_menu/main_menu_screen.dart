@@ -46,7 +46,7 @@ class MainMenuScreen extends StatelessWidget {
             ),
             MenuButton(
               label: 'Reportes',
-              onTap: () {/* ruta pendiente */},
+              onTap: () => Navigator.pushNamed(context, '/reportes'),
             ),
           ],
         ),
