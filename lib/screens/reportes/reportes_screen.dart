@@ -162,7 +162,7 @@ class _ReportesScreenState extends State<ReportesScreen>
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -256,7 +256,7 @@ class _ReportesScreenState extends State<ReportesScreen>
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -271,7 +271,7 @@ class _ReportesScreenState extends State<ReportesScreen>
                           horizontalInterval: 1000,
                           getDrawingHorizontalLine: (value) {
                             return FlLine(
-                              color: Colors.grey.withOpacity(0.2),
+                              color: Colors.grey.withValues(alpha: 0.2),
                               strokeWidth: 1,
                             );
                           },
@@ -371,7 +371,7 @@ class _ReportesScreenState extends State<ReportesScreen>
                             dotData: FlDotData(show: true),
                             belowBarData: BarAreaData(
                               show: true,
-                              color: const Color(0xFF3B82F6).withOpacity(0.2),
+                              color: const Color(0xFF3B82F6).withValues(alpha: 0.2),
                             ),
                           ),
                         ],
@@ -391,7 +391,7 @@ class _ReportesScreenState extends State<ReportesScreen>
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -433,7 +433,7 @@ class _ReportesScreenState extends State<ReportesScreen>
                                   child: LinearProgressIndicator(
                                     value: (_topZonasPercent[i] / 100) * _animation.value,
                                     minHeight: 12,
-                                    backgroundColor: Colors.grey.withOpacity(0.2),
+                                    backgroundColor: Colors.grey.withValues(alpha: 0.2),
                                     valueColor: AlwaysStoppedAnimation<Color>(_topZonasColors[i]),
                                   ),
                                 ),
@@ -458,7 +458,7 @@ class _ReportesScreenState extends State<ReportesScreen>
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -525,7 +525,7 @@ class _ReportesScreenState extends State<ReportesScreen>
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF7C3AED).withOpacity(0.3),
+                color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -598,7 +598,7 @@ class _ReportesScreenState extends State<ReportesScreen>
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 4),
               ),

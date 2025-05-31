@@ -4,8 +4,10 @@
       "Bash(flutter:*)",
       "Bash(/mnt/c/tools/flutter/bin/flutter --version)",
       "Bash(cmd.exe /c \"flutter --version\")",
-      "Bash(cmd.exe /c \"flutter doctor\")"
+      "Bash(cmd.exe /c \"flutter doctor\")",
+      "Bash(grep:*)"
     ],
     "deny": []
-  }
+  },
+  "enableAllProjectMcpServers": false
 }
