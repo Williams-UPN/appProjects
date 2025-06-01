@@ -1445,11 +1445,20 @@ ALTER TABLE ONLY "public"."pagos"
 
 
 
+CREATE POLICY "Usuarios pueden actualizar sus propios gastos" ON "public"."gastos" FOR UPDATE TO "authenticated" USING ((("auth"."uid"())::"text" = "usuario_id")) WITH CHECK ((("auth"."uid"())::"text" = "usuario_id"));
+
+
+
+CREATE POLICY "Usuarios pueden crear sus propios gastos" ON "public"."gastos" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"())::"text" = "usuario_id"));
+
+
+
+CREATE POLICY "Usuarios pueden eliminar sus propios gastos" ON "public"."gastos" FOR DELETE TO "authenticated" USING ((("auth"."uid"())::"text" = "usuario_id"));
+
+
+
 CREATE POLICY "Usuarios ven sus propios gastos" ON "public"."gastos" USING ((("auth"."uid"())::"text" = "usuario_id"));
 
-
-
-ALTER TABLE "public"."gastos" ENABLE ROW LEVEL SECURITY;
 
 
 

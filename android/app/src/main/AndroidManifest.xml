@@ -1,10 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.proyecto"> <uses-permission android:name="android.permission.INTERNET"/>
+    package="com.example.proyecto">
+    
+    <!-- PERMISOS EXISTENTES (preservados) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    
+    <!-- NUEVOS PERMISOS PARA GASTOS (agregados) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
+    <!-- QUERIES EXISTENTES (preservadas) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.DIAL" />
@@ -18,10 +26,10 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="google.navigation" />
         </intent>
-
         <intent>
             <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="waze" /> </intent>
+            <data android:scheme="waze" />
+        </intent>
         <package android:name="com.waze" />
     </queries>
 
@@ -30,7 +38,10 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:name="${applicationName}"
-        android:enableOnBackInvokedCallback="true"> <meta-data
+        android:enableOnBackInvokedCallback="true">
+        
+        <!-- GOOGLE MAPS API KEY EXISTENTE (preservada) -->
+        <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyCk149s4-HgpUqpO3xQqkzLpG1y2taE1sM"/>
 
@@ -53,6 +64,18 @@
                 android:resource="@style/NormalTheme" />
         </activity>
 
+        <!-- NUEVO: FileProvider para image_picker (agregado) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- FLUTTER EMBEDDING EXISTENTE (preservado) -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

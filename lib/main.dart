@@ -7,12 +7,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
 
 import 'data/datasources/cliente_datasource.dart';
+import 'data/datasources/gastos_datasource.dart'; // NUEVO IMPORT
 import 'repositories/cliente_repository.dart';
+import 'repositories/gastos_repository.dart'; // NUEVO IMPORT
 import 'viewmodels/cliente_nuevo_viewmodel.dart';
 import 'viewmodels/lista_clientes_viewmodel.dart';
 import 'viewmodels/clientes_pendientes_viewmodel.dart';
 import 'viewmodels/tarjeta_cliente_viewmodel.dart';
 import 'viewmodels/clientes_cercanos_viewmodel.dart';
+import 'viewmodels/agregar_gastos_viewmodel.dart'; // NUEVO IMPORT
 
 import 'screens/splash.dart';
 import 'screens/main_menu/main_menu_screen.dart';
@@ -40,15 +43,34 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
+        // ═══════════════════════════════════════════════════════
+        // DATASOURCES (Capa de Datos)
+        // ═══════════════════════════════════════════════════════
         Provider<ClienteDatasource>(
           create: (_) => SupabaseClienteDatasource(Supabase.instance.client),
         ),
+        Provider<GastosDatasource>(
+          // NUEVO PROVIDER
+          create: (_) => SupabaseGastosDatasource(Supabase.instance.client),
+        ),
+
+        // ═══════════════════════════════════════════════════════
+        // REPOSITORIES (Capa de Abstracción)
+        // ═══════════════════════════════════════════════════════
         Provider<ClienteRepository>(
           create: (ctx) => ClienteRepositoryImpl(
             Supabase.instance.client,
             ctx.read<ClienteDatasource>(),
           ),
         ),
+        Provider<GastosRepository>(
+          // NUEVO PROVIDER
+          create: (ctx) => GastosRepositoryImpl(ctx.read<GastosDatasource>()),
+        ),
+
+        // ═══════════════════════════════════════════════════════
+        // VIEW MODELS - CLIENTES (Capa de Presentación)
+        // ═══════════════════════════════════════════════════════
         ChangeNotifierProvider(
           create: (ctx) => ClienteNuevoViewModel(ctx.read<ClienteRepository>()),
         ),
@@ -65,8 +87,15 @@ Future<void> main() async {
               TarjetaClienteViewModel(ctx.read<ClienteRepository>()),
         ),
         ChangeNotifierProvider(
-          create: (ctx) => ClientesCercanosViewModel(ctx
-              .read<ClienteRepository>()), // AGREGA EL NUEVO VIEWMODEL PROVIDER
+          create: (ctx) =>
+              ClientesCercanosViewModel(ctx.read<ClienteRepository>()),
+        ),
+
+        // ═══════════════════════════════════════════════════════
+        // VIEW MODELS - GASTOS (NUEVA SECCIÓN)
+        // ═══════════════════════════════════════════════════════
+        ChangeNotifierProvider(
+          create: (ctx) => AgregarGastosViewModel(ctx.read<GastosRepository>()),
         ),
       ],
       child: const MyApp(),
@@ -89,7 +118,7 @@ class MyApp extends StatelessWidget {
         '/nuevo': (_) => const ClienteNuevoScreen(),
         '/pendientes': (_) => const ClientesPendientesScreen(),
         '/clientes_cercanos': (_) => const ClientesCercanosScreen(),
-        '/agregar_gastos': (_) => const AgregarGastosScreen(),
+        '/agregar_gastos': (_) => const AgregarGastosScreen(), // FUNCIONAL ✅
         '/reportes': (_) => const ReportesScreen(),
 
         // Ahora la ruta detalle toma el clienteId de los argumentos:
