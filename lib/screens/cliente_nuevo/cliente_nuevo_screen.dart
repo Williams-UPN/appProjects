@@ -9,8 +9,6 @@ import '../../viewmodels/cliente_nuevo_viewmodel.dart';
 import '../../services/location_service.dart';
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class ClienteNuevoScreen extends StatefulWidget {

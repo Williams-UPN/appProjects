@@ -59,8 +59,10 @@ class LocationService {
       // Obtener posición
       debugPrint('LocationService: Obteniendo posición...');
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
       );
 
       debugPrint(
@@ -101,8 +103,10 @@ class LocationService {
 
       // Obtener posición
       return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 7),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 7),
+        ),
       );
     } catch (e) {
       debugPrint('LocationService Error (coordinates): $e');
