@@ -24,7 +24,12 @@ abstract class ClienteRepository {
   Future<List<PagoRead>> getPagos(int clienteId);
   Future<List<CronogramaRead>> getCronograma(int clienteId);
   Future<List<HistorialRead>> getHistoriales(int clienteId);
-  Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
+  Future<bool> registrarPago(
+    int clienteId, 
+    int numeroCuota, 
+    num monto,
+    {double? latitud, double? longitud, String? direccion}
+  );
   Future<bool> registrarEvento(int clienteId, String descripcion);
   Future<bool> refinanciar(int clienteId, double montoAdicional, int plazoDias);
   Future<bool> nuevoCredito(
@@ -96,10 +101,25 @@ class ClienteRepositoryImpl implements ClienteRepository {
   }
 
   @override
-  Future<bool> registrarPago(int clienteId, int numeroCuota, num monto) async {
+  Future<bool> registrarPago(
+    int clienteId, 
+    int numeroCuota, 
+    num monto,
+    {double? latitud, double? longitud, String? direccion}
+  ) async {
     debugPrint('🔔 [Repo] registrarPago -> '
-        'clienteId=$clienteId, cuota=$numeroCuota, monto=$monto');
-    final success = await _ds.registrarPago(clienteId, numeroCuota, monto);
+        'clienteId=$clienteId, cuota=$numeroCuota, monto=$monto, '
+        'lat=$latitud, lng=$longitud');
+    
+    final success = await _ds.registrarPago(
+      clienteId, 
+      numeroCuota, 
+      monto,
+      latitud: latitud,
+      longitud: longitud,
+      direccion: direccion,
+    );
+    
     debugPrint('🔔 [Repo] _ds.registrarPago devolvió: $success');
     return success;
   }

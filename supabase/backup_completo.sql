@@ -527,6 +527,86 @@ $$;
 ALTER FUNCTION "public"."abrir_nuevo_credito"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."abrir_nuevo_credito_con_ubicacion"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date", "p_latitud" double precision DEFAULT NULL::double precision, "p_longitud" double precision DEFAULT NULL::double precision, "p_direccion" "text" DEFAULT NULL::"text") RETURNS "void"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  v_cli RECORD;
+  v_total_pagado numeric;
+  v_max_atraso integer;
+  v_count_incid integer;
+  v_score integer;
+  v_fecha_inicio date;
+BEGIN
+  -- Obtener datos del cliente actual
+  SELECT * INTO v_cli FROM public.clientes WHERE id = p_cliente_id;
+  
+  -- Calcular métricas para el historial
+  SELECT COALESCE(SUM(monto_pagado), 0) INTO v_total_pagado
+  FROM public.pagos WHERE cliente_id = p_cliente_id;
+  
+  SELECT COALESCE(MAX(GREATEST((p.fecha_pago::date - cr.fecha_venc), 0)), 0)
+  INTO v_max_atraso
+  FROM public.pagos p
+  JOIN public.cronograma cr ON p.cliente_id = cr.cliente_id 
+    AND p.numero_cuota = cr.numero_cuota
+  WHERE p.cliente_id = p_cliente_id;
+  
+  SELECT COUNT(*) INTO v_count_incid
+  FROM public.historial_eventos
+  WHERE cliente_id = p_cliente_id AND tipo_evento = 'Incidencia';
+  
+  v_score := GREATEST(0, LEAST(100, 100 - v_max_atraso*2 - v_count_incid*5));
+  
+  SELECT MIN(fecha_venc) INTO v_fecha_inicio
+  FROM public.cronograma WHERE cliente_id = p_cliente_id;
+  
+  -- GUARDAR EN HISTORIAL CON UBICACIÓN
+  INSERT INTO public.cliente_historial(
+    cliente_id, fecha_inicio, fecha_cierre,
+    monto_solicitado, total_pagado,
+    dias_totales, dias_atraso_max,
+    incidencias, observaciones, calificacion,
+    latitud_cierre, longitud_cierre, direccion_cierre  -- NUEVO
+  ) VALUES (
+    p_cliente_id, v_fecha_inicio, now(),
+    v_cli.monto_solicitado, v_total_pagado,
+    v_cli.plazo_dias, v_max_atraso,
+    v_count_incid, 'Refinanciado', v_score,
+    p_latitud, p_longitud, p_direccion  -- NUEVO
+  );
+  
+  -- Limpiar pagos y cronograma
+  DELETE FROM public.pagos WHERE cliente_id = p_cliente_id;
+  DELETE FROM public.cronograma WHERE cliente_id = p_cliente_id;
+  
+  -- Actualizar cliente con nuevos datos
+  UPDATE public.clientes
+  SET monto_solicitado = p_monto_solicitado,
+      plazo_dias = p_plazo_dias,
+      fecha_primer_pago = p_fecha_primer_pago
+  WHERE id = p_cliente_id;
+  
+  -- Registrar evento con ubicación
+  INSERT INTO public.historial_eventos(
+    cliente_id, tipo_evento, descripcion
+  ) VALUES (
+    p_cliente_id,
+    'Refinanciamiento',
+    format(
+      'Refinanciado a S/%s en %s días. Ubicación: %s',
+      to_char(p_monto_solicitado, 'FM999999.00'),
+      p_plazo_dias,
+      COALESCE(p_direccion, 'Sin ubicación')
+    )
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."abrir_nuevo_credito_con_ubicacion"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date", "p_latitud" double precision, "p_longitud" double precision, "p_direccion" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."actualizar_estado_cliente"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -813,6 +893,836 @@ $$;
 ALTER FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."obtener_cobranza_por_dias"("p_dias_atras" integer DEFAULT 30) RETURNS "json"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  v_resultado JSON;
+  v_fecha_fin DATE := (NOW() AT TIME ZONE 'America/Lima')::DATE;
+  v_fecha_inicio DATE := v_fecha_fin - (p_dias_atras - 1);
+BEGIN
+  SELECT json_build_object(
+    -- Período consultado
+    'periodo', json_build_object(
+      'fecha_inicio', v_fecha_inicio,
+      'fecha_fin', v_fecha_fin,
+      'dias_totales', p_dias_atras
+    ),
+    
+    -- Datos para gráfico de línea/barras
+    'serie_diaria', (
+      SELECT json_agg(
+        json_build_object(
+          'fecha', dia.fecha,
+          'dia_semana', TO_CHAR(dia.fecha, 'Dy'),
+          'cobrado', COALESCE(cobros.monto, 0),
+          'clientes', COALESCE(cobros.clientes, 0),
+          'esperado', COALESCE(esperado.monto, 0),
+          'efectividad', CASE
+            WHEN COALESCE(esperado.monto, 0) = 0 THEN 100
+            ELSE ROUND((COALESCE(cobros.monto, 0) * 100.0 / esperado.monto), 1)
+          END
+        ) ORDER BY dia.fecha
+      )
+      FROM (
+        SELECT generate_series(v_fecha_inicio, v_fecha_fin, '1 day'::interval)::DATE as fecha
+      ) dia
+      LEFT JOIN (
+        SELECT 
+          (fecha_pago AT TIME ZONE 'America/Lima')::DATE as fecha,
+          SUM(monto_pagado) as monto,
+          COUNT(DISTINCT cliente_id) as clientes
+        FROM public.pagos
+        WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE BETWEEN v_fecha_inicio AND v_fecha_fin
+        GROUP BY (fecha_pago AT TIME ZONE 'America/Lima')::DATE
+      ) cobros ON cobros.fecha = dia.fecha
+      LEFT JOIN (
+        SELECT 
+          fecha_venc as fecha,
+          SUM(monto_cuota) as monto
+        FROM public.cronograma
+        WHERE fecha_venc BETWEEN v_fecha_inicio AND v_fecha_fin
+        GROUP BY fecha_venc
+      ) esperado ON esperado.fecha = dia.fecha
+    ),
+    
+    -- Estadísticas del período
+    'estadisticas', json_build_object(
+      'total_cobrado', (
+        SELECT COALESCE(SUM(monto_pagado), 0)
+        FROM public.pagos
+        WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE BETWEEN v_fecha_inicio AND v_fecha_fin
+      ),
+      'promedio_diario', (
+        SELECT ROUND(AVG(monto_dia), 2)
+        FROM (
+          SELECT SUM(monto_pagado) as monto_dia
+          FROM public.pagos
+          WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE BETWEEN v_fecha_inicio AND v_fecha_fin
+          GROUP BY (fecha_pago AT TIME ZONE 'America/Lima')::DATE
+        ) promedios
+      ),
+      'mejor_dia', (
+        SELECT json_build_object(
+          'fecha', fecha,
+          'monto', monto,
+          'dia_semana', TO_CHAR(fecha, 'TMDay')
+        )
+        FROM (
+          SELECT 
+            (fecha_pago AT TIME ZONE 'America/Lima')::DATE as fecha,
+            SUM(monto_pagado) as monto
+          FROM public.pagos
+          WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE BETWEEN v_fecha_inicio AND v_fecha_fin
+          GROUP BY (fecha_pago AT TIME ZONE 'America/Lima')::DATE
+          ORDER BY monto DESC
+          LIMIT 1
+        ) mejor
+      )
+    )
+  );
+  
+  RETURN v_resultado;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."obtener_cobranza_por_dias"("p_dias_atras" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."obtener_cobranza_por_mes"("p_numero_meses" integer DEFAULT 6) RETURNS "json"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  v_resultado JSON;
+  v_fecha_hoy DATE := (NOW() AT TIME ZONE 'America/Lima')::DATE;
+  v_fecha_inicio DATE;
+BEGIN
+  -- Calcular fecha de inicio (primer día del mes hace X meses)
+  v_fecha_inicio := DATE_TRUNC('month', v_fecha_hoy - (p_numero_meses || ' months')::INTERVAL);
+  
+  SELECT json_build_object(
+    -- Información del período
+    'periodo_consultado', json_build_object(
+      'fecha_inicio', v_fecha_inicio,
+      'fecha_fin', v_fecha_hoy,
+      'numero_meses', p_numero_meses
+    ),
+    
+    -- Detalle por mes
+    'meses', (
+      SELECT json_agg(mes ORDER BY año DESC, mes_num DESC)
+      FROM (
+        SELECT json_build_object(
+          'año', año,
+          'mes_numero', mes_num,
+          'mes_nombre', TO_CHAR(primer_dia, 'TMMonth'),
+          'fecha_inicio', primer_dia,
+          'fecha_fin', ultimo_dia,
+          'total_cobrado', COALESCE(monto_mes, 0),
+          'clientes_pagaron', COALESCE(clientes_mes, 0),
+          'promedio_diario', ROUND(COALESCE(monto_mes, 0) / dias_mes, 2),
+          'dias_cobro', COALESCE(dias_activos, 0),
+          'total_esperado', COALESCE(esperado_mes, 0),
+          'efectividad', CASE
+            WHEN COALESCE(esperado_mes, 0) = 0 THEN 100
+            ELSE ROUND((COALESCE(monto_mes, 0) * 100.0 / esperado_mes), 1)
+          END,
+          'detalle_semanas', semanas_del_mes
+        ) as mes,
+        año,
+        mes_num
+        FROM (
+          -- Generar meses y sus datos
+          SELECT 
+            EXTRACT(YEAR FROM mes.fecha)::INT as año,
+            EXTRACT(MONTH FROM mes.fecha)::INT as mes_num,
+            DATE_TRUNC('month', mes.fecha)::DATE as primer_dia,
+            (DATE_TRUNC('month', mes.fecha) + INTERVAL '1 month' - INTERVAL '1 day')::DATE as ultimo_dia,
+            EXTRACT(DAY FROM DATE_TRUNC('month', mes.fecha) + INTERVAL '1 month' - INTERVAL '1 day')::INT as dias_mes,
+            -- Cobrado en el mes
+            (
+              SELECT SUM(monto_pagado)
+              FROM public.pagos
+              WHERE DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = DATE_TRUNC('month', mes.fecha)
+            ) as monto_mes,
+            -- Clientes que pagaron
+            (
+              SELECT COUNT(DISTINCT cliente_id)
+              FROM public.pagos
+              WHERE DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = DATE_TRUNC('month', mes.fecha)
+            ) as clientes_mes,
+            -- Días con cobro
+            (
+              SELECT COUNT(DISTINCT (fecha_pago AT TIME ZONE 'America/Lima')::DATE)
+              FROM public.pagos
+              WHERE DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = DATE_TRUNC('month', mes.fecha)
+            ) as dias_activos,
+            -- Monto esperado
+            (
+              SELECT SUM(monto_cuota)
+              FROM public.cronograma
+              WHERE DATE_TRUNC('month', fecha_venc) = DATE_TRUNC('month', mes.fecha)
+            ) as esperado_mes,
+            -- Detalle por semanas del mes
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'semana', num_semana,
+                  'fecha_inicio', inicio_semana,
+                  'fecha_fin', fin_semana,
+                  'monto', monto_semana
+                ) ORDER BY num_semana
+              )
+              FROM (
+                SELECT 
+                  ROW_NUMBER() OVER (ORDER BY semana_inicio) as num_semana,
+                  semana_inicio as inicio_semana,
+                  LEAST(semana_inicio + 6, ultimo_dia_mes) as fin_semana,
+                  (
+                    SELECT COALESCE(SUM(monto_pagado), 0)
+                    FROM public.pagos
+                    WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE 
+                      BETWEEN semana_inicio AND LEAST(semana_inicio + 6, ultimo_dia_mes)
+                  ) as monto_semana
+                FROM (
+                  SELECT 
+                    generate_series(
+                      DATE_TRUNC('month', mes.fecha)::DATE,
+                      (DATE_TRUNC('month', mes.fecha) + INTERVAL '1 month' - INTERVAL '1 day')::DATE,
+                      '7 days'
+                    )::DATE as semana_inicio,
+                    (DATE_TRUNC('month', mes.fecha) + INTERVAL '1 month' - INTERVAL '1 day')::DATE as ultimo_dia_mes
+                ) semanas_mes
+              ) detalle_semanas
+            ) as semanas_del_mes
+          FROM (
+            SELECT generate_series(
+              v_fecha_inicio,
+              v_fecha_hoy,
+              '1 month'
+            )::DATE as fecha
+          ) mes
+        ) datos_mes
+      ) resultado_meses
+    ),
+    
+    -- Estadísticas generales
+    'estadisticas', json_build_object(
+      'total_periodo', (
+        SELECT COALESCE(SUM(monto_pagado), 0)
+        FROM public.pagos
+        WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE >= v_fecha_inicio
+      ),
+      'promedio_mensual', (
+        SELECT ROUND(AVG(monto_mes), 2)
+        FROM (
+          SELECT 
+            DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE) as mes,
+            SUM(monto_pagado) as monto_mes
+          FROM public.pagos
+          WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE >= v_fecha_inicio
+          GROUP BY DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE)
+        ) promedios
+      ),
+      'mejor_mes', (
+        SELECT json_build_object(
+          'año', EXTRACT(YEAR FROM mes)::INT,
+          'mes', TO_CHAR(mes, 'TMMonth'),
+          'monto', monto
+        )
+        FROM (
+          SELECT 
+            DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE) as mes,
+            SUM(monto_pagado) as monto
+          FROM public.pagos
+          WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE >= v_fecha_inicio
+          GROUP BY DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE)
+          ORDER BY monto DESC
+          LIMIT 1
+        ) mejor
+      ),
+      'tendencia', (
+        -- Comparar último mes completo vs penúltimo
+        SELECT CASE
+          WHEN ultimo > penultimo THEN 'mejorando'
+          WHEN ultimo < penultimo THEN 'bajando'
+          ELSE 'estable'
+        END
+        FROM (
+          SELECT 
+            (
+              SELECT COALESCE(SUM(monto_pagado), 0)
+              FROM public.pagos
+              WHERE DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = 
+                    DATE_TRUNC('month', v_fecha_hoy - INTERVAL '1 month')
+            ) as ultimo,
+            (
+              SELECT COALESCE(SUM(monto_pagado), 0)
+              FROM public.pagos
+              WHERE DATE_TRUNC('month', (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = 
+                    DATE_TRUNC('month', v_fecha_hoy - INTERVAL '2 months')
+            ) as penultimo
+        ) comparacion
+      )
+    ),
+    
+    -- Comparativa año actual vs anterior
+    'comparativa_anual', (
+      SELECT json_build_object(
+        'año_actual', EXTRACT(YEAR FROM v_fecha_hoy)::INT,
+        'total_año_actual', (
+          SELECT COALESCE(SUM(monto_pagado), 0)
+          FROM public.pagos
+          WHERE EXTRACT(YEAR FROM (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = EXTRACT(YEAR FROM v_fecha_hoy)
+        ),
+        'año_anterior', (EXTRACT(YEAR FROM v_fecha_hoy) - 1)::INT,
+        'total_año_anterior', (
+          SELECT COALESCE(SUM(monto_pagado), 0)
+          FROM public.pagos
+          WHERE EXTRACT(YEAR FROM (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = EXTRACT(YEAR FROM v_fecha_hoy) - 1
+        ),
+        'variacion_porcentual', (
+          SELECT CASE
+            WHEN año_anterior = 0 THEN NULL
+            ELSE ROUND(((año_actual - año_anterior) * 100.0 / año_anterior), 1)
+          END
+          FROM (
+            SELECT 
+              (
+                SELECT COALESCE(SUM(monto_pagado), 0)
+                FROM public.pagos
+                WHERE EXTRACT(YEAR FROM (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = EXTRACT(YEAR FROM v_fecha_hoy)
+              ) as año_actual,
+              (
+                SELECT COALESCE(SUM(monto_pagado), 0)
+                FROM public.pagos
+                WHERE EXTRACT(YEAR FROM (fecha_pago AT TIME ZONE 'America/Lima')::DATE) = EXTRACT(YEAR FROM v_fecha_hoy) - 1
+              ) as año_anterior
+          ) datos
+        )
+      )
+    )
+  ) INTO v_resultado;
+  
+  RETURN v_resultado;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."obtener_cobranza_por_mes"("p_numero_meses" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."obtener_cobranza_por_semana"("p_fecha_inicio" "date" DEFAULT NULL::"date", "p_numero_semanas" integer DEFAULT 4) RETURNS "json"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  v_resultado JSON;
+  v_fecha_base DATE;
+  v_domingo_actual DATE;
+BEGIN
+  -- Si no se especifica fecha, usar HOY
+  v_fecha_base := COALESCE(p_fecha_inicio, (NOW() AT TIME ZONE 'America/Lima')::DATE);
+  
+  -- Encontrar el domingo de la semana actual (fin de semana)
+  v_domingo_actual := v_fecha_base + (6 - EXTRACT(DOW FROM v_fecha_base))::INTEGER;
+  
+  -- Construir el resultado
+  SELECT json_build_object(
+    -- Información de contexto
+    'periodo_consultado', json_build_object(
+      'fecha_inicio', v_domingo_actual - (p_numero_semanas * 7 - 1),
+      'fecha_fin', v_domingo_actual,
+      'numero_semanas', p_numero_semanas
+    ),
+    
+    -- Detalle por semana
+    'semanas', (
+      SELECT json_agg(semana ORDER BY semana_inicio DESC)
+      FROM (
+        SELECT 
+          json_build_object(
+            'semana_numero', (p_numero_semanas - num_semana),
+            'fecha_inicio', fecha_inicio_semana,
+            'fecha_fin', fecha_fin_semana,
+            'total_cobrado', total_semana,
+            'clientes_pagaron', clientes_semana,
+            'promedio_diario', ROUND(total_semana / 7, 2),
+            'dias_con_cobro', dias_activos,
+            'detalle_dias', dias_detalle
+          ) as semana,
+          fecha_inicio_semana as semana_inicio
+        FROM (
+          -- Para cada semana
+          SELECT 
+            num_semana,
+            fecha_inicio_semana,
+            fecha_fin_semana,
+            COALESCE(SUM(monto_dia), 0) as total_semana,
+            COUNT(DISTINCT CASE WHEN monto_dia > 0 THEN cliente_dia END) as clientes_semana,
+            COUNT(CASE WHEN monto_dia > 0 THEN 1 END) as dias_activos,
+            json_agg(
+              json_build_object(
+                'fecha', fecha_dia,
+                'dia', TO_CHAR(fecha_dia, 'Dy'),
+                'monto', monto_dia,
+                'clientes', num_clientes_dia
+              ) ORDER BY fecha_dia
+            ) as dias_detalle
+          FROM (
+            -- Generar todas las fechas y sus cobros
+            SELECT 
+              num_semana,
+              fecha_inicio_semana,
+              fecha_fin_semana,
+              dia.fecha as fecha_dia,
+              COALESCE(SUM(p.monto_pagado), 0) as monto_dia,
+              COUNT(DISTINCT p.cliente_id) as num_clientes_dia,
+              p.cliente_id as cliente_dia
+            FROM (
+              -- Generar semanas
+              SELECT 
+                s.num as num_semana,
+                v_domingo_actual - ((s.num * 7) - 1) as fecha_inicio_semana,
+                v_domingo_actual - ((s.num - 1) * 7) as fecha_fin_semana
+              FROM generate_series(0, p_numero_semanas - 1) s(num)
+            ) semanas
+            CROSS JOIN LATERAL (
+              -- Generar días de cada semana
+              SELECT generate_series(
+                fecha_inicio_semana,
+                fecha_fin_semana,
+                '1 day'::interval
+              )::date as fecha
+            ) dia
+            LEFT JOIN public.pagos p 
+              ON (p.fecha_pago AT TIME ZONE 'America/Lima')::DATE = dia.fecha
+            GROUP BY num_semana, fecha_inicio_semana, fecha_fin_semana, dia.fecha, p.cliente_id
+          ) dias_semana
+          GROUP BY num_semana, fecha_inicio_semana, fecha_fin_semana
+        ) resumen_semanas
+      ) resultado_final
+    ),
+    
+    -- Comparativa entre semanas
+    'comparativa', (
+      SELECT json_build_object(
+        'mejor_semana', (
+          SELECT json_build_object(
+            'fecha_inicio', fecha_inicio,
+            'fecha_fin', fecha_fin,
+            'monto', monto_total
+          )
+          FROM (
+            SELECT 
+              v_domingo_actual - ((s.num * 7) - 1) as fecha_inicio,
+              v_domingo_actual - ((s.num - 1) * 7) as fecha_fin,
+              COALESCE(SUM(p.monto_pagado), 0) as monto_total
+            FROM generate_series(0, p_numero_semanas - 1) s(num)
+            CROSS JOIN LATERAL (
+              SELECT generate_series(
+                v_domingo_actual - ((s.num * 7) - 1),
+                v_domingo_actual - ((s.num - 1) * 7),
+                '1 day'::interval
+              )::date as fecha
+            ) dias
+            LEFT JOIN public.pagos p 
+              ON (p.fecha_pago AT TIME ZONE 'America/Lima')::DATE = dias.fecha
+            GROUP BY s.num
+            ORDER BY monto_total DESC
+            LIMIT 1
+          ) mejor
+        ),
+        'promedio_semanal', (
+          SELECT ROUND(AVG(monto_semanal), 2)
+          FROM (
+            SELECT COALESCE(SUM(p.monto_pagado), 0) as monto_semanal
+            FROM generate_series(0, p_numero_semanas - 1) s(num)
+            CROSS JOIN LATERAL (
+              SELECT generate_series(
+                v_domingo_actual - ((s.num * 7) - 1),
+                v_domingo_actual - ((s.num - 1) * 7),
+                '1 day'::interval
+              )::date as fecha
+            ) dias
+            LEFT JOIN public.pagos p 
+              ON (p.fecha_pago AT TIME ZONE 'America/Lima')::DATE = dias.fecha
+            GROUP BY s.num
+          ) promedios
+        ),
+        'tendencia', CASE
+          -- Comparar última semana vs penúltima
+          WHEN (
+            SELECT COALESCE(SUM(monto_pagado), 0)
+            FROM public.pagos
+            WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE 
+              BETWEEN v_domingo_actual - 6 AND v_domingo_actual
+          ) > (
+            SELECT COALESCE(SUM(monto_pagado), 0)
+            FROM public.pagos
+            WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE 
+              BETWEEN v_domingo_actual - 13 AND v_domingo_actual - 7
+          ) THEN 'mejorando'
+          ELSE 'bajando'
+        END
+      )
+    )
+  ) INTO v_resultado;
+  
+  RETURN v_resultado;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."obtener_cobranza_por_semana"("p_fecha_inicio" "date", "p_numero_semanas" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."obtener_estado_cartera_grafico"() RETURNS "json"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  -- Variables para guardar los conteos
+  v_al_dia INTEGER;          -- Cuántos están al día
+  v_pendientes_hoy INTEGER;  -- Cuántos deben pagar hoy
+  v_atrasados INTEGER;       -- Cuántos están morosos
+  v_total_activos INTEGER;   -- Total de clientes activos
+  v_resultado JSON;          -- El resultado final
+BEGIN
+  -- PASO 1: Contar clientes por estado
+  -- Esta consulta cuenta cuántos clientes hay en cada estado
+  SELECT 
+    COUNT(*) FILTER (WHERE estado_real = 'al_dia'),      -- Cuenta los al día
+    COUNT(*) FILTER (WHERE estado_real = 'pendiente'),   -- Cuenta los que pagan hoy
+    COUNT(*) FILTER (WHERE estado_real = 'atrasado'),    -- Cuenta los morosos
+    COUNT(*) FILTER (WHERE estado_real IN ('al_dia', 'pendiente', 'atrasado'))  -- Total activos
+  INTO v_al_dia, v_pendientes_hoy, v_atrasados, v_total_activos
+  FROM public.v_clientes_con_estado;  -- Usamos la vista que ya existe
+  
+  -- PASO 2: Construir el JSON de respuesta
+  v_resultado := json_build_object(
+    -- Array con los datos para el gráfico
+    'datos_grafico', json_build_array(
+      -- Primer segmento: Al día (Verde)
+      json_build_object(
+        'estado', 'Al día',
+        'cantidad', v_al_dia,
+        'porcentaje', CASE 
+          WHEN v_total_activos = 0 THEN 0  -- Evita división por cero
+          ELSE ROUND((v_al_dia * 100.0 / v_total_activos), 1)  -- Calcula %
+        END,
+        'color', '#4CAF50'  -- Verde
+      ),
+      -- Segundo segmento: Pagar hoy (Naranja)
+      json_build_object(
+        'estado', 'Pagar hoy',
+        'cantidad', v_pendientes_hoy,
+        'porcentaje', CASE 
+          WHEN v_total_activos = 0 THEN 0 
+          ELSE ROUND((v_pendientes_hoy * 100.0 / v_total_activos), 1)
+        END,
+        'color', '#FF9800'  -- Naranja
+      ),
+      -- Tercer segmento: Morosos (Rojo)
+      json_build_object(
+        'estado', 'Morosos',
+        'cantidad', v_atrasados,
+        'porcentaje', CASE 
+          WHEN v_total_activos = 0 THEN 0 
+          ELSE ROUND((v_atrasados * 100.0 / v_total_activos), 1)
+        END,
+        'color', '#F44336'  -- Rojo
+      )
+    ),
+    -- Resumen adicional
+    'resumen', json_build_object(
+      'total_clientes_activos', v_total_activos,
+      'requieren_atencion_hoy', v_pendientes_hoy + v_atrasados,  -- Suma urgentes
+      'tasa_morosidad', CASE 
+        WHEN v_total_activos = 0 THEN 0 
+        ELSE ROUND((v_atrasados * 100.0 / v_total_activos), 1)
+      END
+    )
+  );
+  
+  -- PASO 3: Devolver el resultado
+  RETURN v_resultado;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."obtener_estado_cartera_grafico"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."obtener_estado_del_dia"() RETURNS "json"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  v_hoy DATE := (NOW() AT TIME ZONE 'America/Lima')::DATE;
+  v_resultado JSON;
+  v_pagaron_hoy INTEGER;
+  v_solo_deben_hoy INTEGER;
+  v_en_mora INTEGER;
+  v_monto_cobrado_hoy NUMERIC;
+BEGIN
+  -- 1. Clientes que pagaron HOY (cualquier pago)
+  SELECT COUNT(DISTINCT cliente_id)
+  INTO v_pagaron_hoy
+  FROM public.pagos
+  WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE = v_hoy;
+  
+  -- 2. Clientes que SOLO deben la cuota de hoy (no tienen mora previa)
+  SELECT COUNT(DISTINCT cr.cliente_id)
+  INTO v_solo_deben_hoy
+  FROM public.cronograma cr
+  WHERE cr.fecha_venc = v_hoy
+    AND cr.fecha_pagado IS NULL
+    AND NOT EXISTS (
+      -- No tiene cuotas anteriores sin pagar
+      SELECT 1 FROM public.cronograma cr2
+      WHERE cr2.cliente_id = cr.cliente_id
+        AND cr2.fecha_venc < v_hoy
+        AND cr2.fecha_pagado IS NULL
+    );
+  
+  -- 3. Clientes en MORA (deben cuotas anteriores a hoy)
+  SELECT COUNT(DISTINCT cliente_id)
+  INTO v_en_mora
+  FROM public.cronograma
+  WHERE fecha_venc < v_hoy
+    AND fecha_pagado IS NULL;
+    
+  -- 4. Total cobrado hoy
+  SELECT COALESCE(SUM(monto_pagado), 0)
+  INTO v_monto_cobrado_hoy
+  FROM public.pagos
+  WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE = v_hoy;
+  
+  -- Construir el JSON de respuesta
+  SELECT json_build_object(
+    'fecha_consulta', v_hoy,
+    'dia_semana', TO_CHAR(v_hoy, 'TMDay'),
+    
+    -- Datos para el gráfico circular
+    'grafico_del_dia', json_build_array(
+      -- Pagaron hoy (Verde)
+      json_build_object(
+        'categoria', 'Pagaron hoy',
+        'cantidad', v_pagaron_hoy,
+        'porcentaje', CASE 
+          WHEN (v_pagaron_hoy + v_solo_deben_hoy + v_en_mora) = 0 THEN 0
+          ELSE ROUND(v_pagaron_hoy * 100.0 / (v_pagaron_hoy + v_solo_deben_hoy + v_en_mora), 1)
+        END,
+        'color', '#4CAF50',
+        'descripcion', 'Clientes que realizaron algún pago hoy'
+      ),
+      
+      -- Solo deben hoy (Naranja)
+      json_build_object(
+        'categoria', 'Pendiente solo hoy',
+        'cantidad', v_solo_deben_hoy,
+        'porcentaje', CASE 
+          WHEN (v_pagaron_hoy + v_solo_deben_hoy + v_en_mora) = 0 THEN 0
+          ELSE ROUND(v_solo_deben_hoy * 100.0 / (v_pagaron_hoy + v_solo_deben_hoy + v_en_mora), 1)
+        END,
+        'color', '#FF9800',
+        'descripcion', 'Deben únicamente la cuota de hoy'
+      ),
+      
+      -- En mora (Rojo)
+      json_build_object(
+        'categoria', 'En mora',
+        'cantidad', v_en_mora,
+        'porcentaje', CASE 
+          WHEN (v_pagaron_hoy + v_solo_deben_hoy + v_en_mora) = 0 THEN 0
+          ELSE ROUND(v_en_mora * 100.0 / (v_pagaron_hoy + v_solo_deben_hoy + v_en_mora), 1)
+        END,
+        'color', '#F44336',
+        'descripcion', 'Deben cuotas de días anteriores'
+      )
+    ),
+    
+    -- Resumen del día
+    'resumen', json_build_object(
+      'total_clientes_dia', v_pagaron_hoy + v_solo_deben_hoy + v_en_mora,
+      'monto_cobrado_hoy', v_monto_cobrado_hoy,
+      'clientes_por_cobrar', v_solo_deben_hoy + v_en_mora,
+      'requieren_atencion_urgente', v_en_mora
+    ),
+    
+    -- Detalle de mora
+    'detalle_mora', (
+      SELECT json_build_object(
+        'total_clientes_morosos', COUNT(DISTINCT cliente_id),
+        'total_cuotas_vencidas', COUNT(*),
+        'monto_total_vencido', COALESCE(SUM(monto_cuota), 0),
+        'promedio_dias_atraso', ROUND(AVG(v_hoy - fecha_venc), 1)
+      )
+      FROM public.cronograma
+      WHERE fecha_venc < v_hoy
+        AND fecha_pagado IS NULL
+    )
+  ) INTO v_resultado;
+  
+  RETURN v_resultado;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."obtener_estado_del_dia"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."obtener_reporte_completo"() RETURNS "json"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  v_resultado JSON;
+  v_fecha_hoy DATE := (NOW() AT TIME ZONE 'America/Lima')::DATE;
+  v_inicio_mes DATE := DATE_TRUNC('month', v_fecha_hoy);
+BEGIN
+  -- Construir JSON con todos los datos del reporte
+  SELECT json_build_object(
+    -- =====================================================
+    -- RESUMEN DEL DÍA DE HOY
+    -- =====================================================
+    'resumen_hoy', json_build_object(
+      'cobrado_hoy', (
+        SELECT COALESCE(SUM(monto_pagado), 0)::numeric(10,2)
+        FROM public.pagos 
+        WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE = v_fecha_hoy
+      ),
+      'clientes_pagaron_hoy', (
+        SELECT COUNT(DISTINCT cliente_id)::integer
+        FROM public.pagos 
+        WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE = v_fecha_hoy
+      ),
+      'gastos_hoy', 0::numeric(10,2),
+      'balance_hoy', (
+        SELECT COALESCE(SUM(monto_pagado), 0)::numeric(10,2)
+        FROM public.pagos 
+        WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE = v_fecha_hoy
+      )
+    ),
+    
+    -- =====================================================
+    -- ESTADO DE CARTERA (reutilizamos la lógica anterior)
+    -- =====================================================
+    'estado_cartera', (
+      SELECT json_build_object(
+        'al_dia', COUNT(*) FILTER (WHERE estado_real = 'al_dia'),
+        'pendientes_hoy', COUNT(*) FILTER (WHERE estado_real = 'pendiente'),
+        'atrasados', COUNT(*) FILTER (WHERE estado_real = 'atrasado'),
+        'completados', COUNT(*) FILTER (WHERE estado_real = 'completo'),
+        'total_activos', COUNT(*) FILTER (WHERE estado_real != 'completo'),
+        'saldo_total_pendiente', (
+          SELECT COALESCE(SUM(saldo_pendiente), 0)::numeric(10,2)
+          FROM public.clientes
+          WHERE estado_pago != 'completo'
+        )
+      )
+      FROM public.v_clientes_con_estado
+    ),
+    
+    -- =====================================================
+    -- COBRANZA DE LOS ÚLTIMOS 7 DÍAS
+    -- =====================================================
+    'cobranza_semanal', (
+      SELECT json_agg(
+        json_build_object(
+          'fecha', dia.fecha,
+          'dia_nombre', dia.dia_nombre,
+          'dia_corto', dia.dia_corto,
+          'monto', dia.monto,
+          'cantidad_pagos', dia.cantidad_pagos
+        ) ORDER BY dia.fecha
+      )
+      FROM (
+        SELECT 
+          fechas.fecha,
+          TO_CHAR(fechas.fecha, 'TMDay') as dia_nombre,
+          TO_CHAR(fechas.fecha, 'Dy') as dia_corto,
+          COALESCE(SUM(p.monto_pagado), 0)::numeric(10,2) as monto,
+          COUNT(p.id)::integer as cantidad_pagos
+        FROM (
+          -- Genera las últimas 7 fechas
+          SELECT generate_series(
+            v_fecha_hoy - INTERVAL '6 days',
+            v_fecha_hoy,
+            '1 day'::interval
+          )::date as fecha
+        ) fechas
+        LEFT JOIN public.pagos p 
+          ON (p.fecha_pago AT TIME ZONE 'America/Lima')::DATE = fechas.fecha
+        GROUP BY fechas.fecha
+      ) dia
+    ),
+    
+    -- =====================================================
+    -- GASTOS (placeholder por ahora)
+    -- =====================================================
+    'gastos_categoria', json_build_object(
+      'Gasolina', 0::numeric(10,2),
+      'Teléfono', 0::numeric(10,2),
+      'Comida', 0::numeric(10,2),
+      'Otro', 0::numeric(10,2),
+      'total', 0::numeric(10,2)
+    ),
+    
+    -- =====================================================
+    -- KPIs DEL MES ACTUAL
+    -- =====================================================
+    'kpis_mes', json_build_object(
+      'nuevos_creditos', (
+        SELECT COUNT(*)::integer
+        FROM public.clientes 
+        WHERE (fecha_creacion AT TIME ZONE 'America/Lima')::DATE >= v_inicio_mes
+      ),
+      'creditos_cerrados', (
+        SELECT COUNT(*)::integer
+        FROM public.cliente_historial
+        WHERE (fecha_cierre AT TIME ZONE 'America/Lima')::DATE >= v_inicio_mes
+      ),
+      'tasa_morosidad', (
+        SELECT CASE 
+          WHEN COUNT(*) = 0 THEN 0
+          ELSE ROUND(
+            COUNT(*) FILTER (WHERE estado_real = 'atrasado') * 100.0 / 
+            COUNT(*) FILTER (WHERE estado_real != 'completo'), 
+            1
+          )
+        END
+        FROM public.v_clientes_con_estado
+      ),
+      'total_prestado_mes', (
+        SELECT COALESCE(SUM(monto_solicitado), 0)::numeric(10,2)
+        FROM public.clientes
+        WHERE (fecha_creacion AT TIME ZONE 'America/Lima')::DATE >= v_inicio_mes
+      ),
+      'total_cobrado_mes', (
+        SELECT COALESCE(SUM(monto_pagado), 0)::numeric(10,2)
+        FROM public.pagos
+        WHERE (fecha_pago AT TIME ZONE 'America/Lima')::DATE >= v_inicio_mes
+      )
+    ),
+    
+    -- =====================================================
+    -- INFORMACIÓN ADICIONAL
+    -- =====================================================
+    'metadata', json_build_object(
+      'fecha_generacion', NOW(),
+      'zona_horaria', 'America/Lima',
+      'fecha_reporte', v_fecha_hoy
+    )
+    
+  ) INTO v_resultado;
+  
+  RETURN v_resultado;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."obtener_reporte_completo"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."recalcular_datos_cliente"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -985,7 +1895,10 @@ CREATE TABLE IF NOT EXISTS "public"."cliente_historial" (
     "observaciones" "text",
     "calificacion" integer NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "fecha_inicio" "date"
+    "fecha_inicio" "date",
+    "latitud_cierre" double precision,
+    "longitud_cierre" double precision,
+    "direccion_cierre" "text"
 );
 
 
@@ -1166,7 +2079,10 @@ CREATE TABLE IF NOT EXISTS "public"."pagos" (
     "numero_cuota" integer NOT NULL,
     "monto_pagado" numeric NOT NULL,
     "fecha_pago" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "latitud" double precision,
+    "longitud" double precision,
+    "direccion_cobro" "text"
 );
 
 
@@ -1323,6 +2239,30 @@ CREATE OR REPLACE VIEW "public"."v_gastos_resumen" AS
 
 
 ALTER TABLE "public"."v_gastos_resumen" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."v_pagos_con_ubicacion" AS
+ SELECT "p"."id",
+    "p"."cliente_id",
+    "p"."numero_cuota",
+    "p"."monto_pagado",
+    "p"."fecha_pago",
+    "p"."created_at",
+    "p"."latitud",
+    "p"."longitud",
+    "p"."direccion_cobro",
+    "c"."nombre" AS "cliente_nombre",
+    "c"."direccion" AS "cliente_direccion",
+        CASE
+            WHEN ("p"."latitud" IS NOT NULL) THEN "format"('%.6f, %.6f'::"text", "p"."latitud", "p"."longitud")
+            ELSE 'Sin ubicación'::"text"
+        END AS "coordenadas"
+   FROM ("public"."pagos" "p"
+     JOIN "public"."clientes" "c" ON (("c"."id" = "p"."cliente_id")))
+  ORDER BY "p"."fecha_pago" DESC;
+
+
+ALTER TABLE "public"."v_pagos_con_ubicacion" OWNER TO "postgres";
 
 
 ALTER TABLE ONLY "public"."cliente_historial" ALTER COLUMN "id" SET DEFAULT "nextval"('"public"."cliente_historial_id_seq"'::"regclass");
@@ -1725,6 +2665,12 @@ GRANT ALL ON FUNCTION "public"."abrir_nuevo_credito"("p_cliente_id" bigint, "p_m
 
 
 
+GRANT ALL ON FUNCTION "public"."abrir_nuevo_credito_con_ubicacion"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date", "p_latitud" double precision, "p_longitud" double precision, "p_direccion" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."abrir_nuevo_credito_con_ubicacion"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date", "p_latitud" double precision, "p_longitud" double precision, "p_direccion" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."abrir_nuevo_credito_con_ubicacion"("p_cliente_id" bigint, "p_monto_solicitado" numeric, "p_plazo_dias" integer, "p_fecha_primer_pago" "date", "p_latitud" double precision, "p_longitud" double precision, "p_direccion" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."actualizar_estado_cliente"() TO "anon";
 GRANT ALL ON FUNCTION "public"."actualizar_estado_cliente"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."actualizar_estado_cliente"() TO "service_role";
@@ -1758,6 +2704,42 @@ GRANT ALL ON FUNCTION "public"."crear_historial_cerrado"("p_cliente_id" bigint, 
 GRANT ALL ON FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) TO "anon";
 GRANT ALL ON FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."crear_historial_cerrado_v1"("p_cliente_id" bigint) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_dias"("p_dias_atras" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_dias"("p_dias_atras" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_dias"("p_dias_atras" integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_mes"("p_numero_meses" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_mes"("p_numero_meses" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_mes"("p_numero_meses" integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_semana"("p_fecha_inicio" "date", "p_numero_semanas" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_semana"("p_fecha_inicio" "date", "p_numero_semanas" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."obtener_cobranza_por_semana"("p_fecha_inicio" "date", "p_numero_semanas" integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."obtener_estado_cartera_grafico"() TO "anon";
+GRANT ALL ON FUNCTION "public"."obtener_estado_cartera_grafico"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."obtener_estado_cartera_grafico"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."obtener_estado_del_dia"() TO "anon";
+GRANT ALL ON FUNCTION "public"."obtener_estado_del_dia"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."obtener_estado_del_dia"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."obtener_reporte_completo"() TO "anon";
+GRANT ALL ON FUNCTION "public"."obtener_reporte_completo"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."obtener_reporte_completo"() TO "service_role";
 
 
 
@@ -1905,6 +2887,12 @@ GRANT ALL ON TABLE "public"."v_gastos_por_categoria" TO "service_role";
 GRANT ALL ON TABLE "public"."v_gastos_resumen" TO "anon";
 GRANT ALL ON TABLE "public"."v_gastos_resumen" TO "authenticated";
 GRANT ALL ON TABLE "public"."v_gastos_resumen" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."v_pagos_con_ubicacion" TO "anon";
+GRANT ALL ON TABLE "public"."v_pagos_con_ubicacion" TO "authenticated";
+GRANT ALL ON TABLE "public"."v_pagos_con_ubicacion" TO "service_role";
 
 
 

@@ -56,9 +56,9 @@ class ClienteDetailRead {
       direccion: m['direccion'] as String,
       negocio: (m['negocio'] as String?) ?? '',
       estadoReal: m['estado_real'] as String,
-      diasReales: (m['dias_reales'] as num).toInt(),
-      scoreActual: (m['score_actual'] as num).toInt(),
-      hasHistory: m['has_history'] as bool,
+      diasReales: (m['dias_reales'] as num?)?.toInt() ?? 0,  // Manejo seguro de null
+      scoreActual: (m['score_actual'] as num?)?.toInt() ?? 100,  // Valor por defecto si es null
+      hasHistory: m['has_history'] as bool? ?? false,
       montoSolicitado: m['monto_solicitado'] as num,
       fechaPrimerPago: fechaPrimer,
       cuotaDiaria: m['cuota_diaria'] as num,

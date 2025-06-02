@@ -1,14 +1,18 @@
 // lib/viewmodels/tarjeta_cliente_viewmodel.dart
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cliente_detail_read.dart';
 import '../models/pago_read.dart';
 import '../models/cronograma_read.dart';
 import '../models/historial_read.dart';
 import '../repositories/cliente_repository.dart';
+import '../services/location_service.dart';
 
 class TarjetaClienteViewModel extends ChangeNotifier {
   final ClienteRepository _repo;
+  final LocationService _locationService = LocationService();
+  final SupabaseClient _supabase = Supabase.instance.client;
 
   TarjetaClienteViewModel(this._repo);
 
@@ -175,15 +179,45 @@ class TarjetaClienteViewModel extends ChangeNotifier {
 
   Future<bool> registrarPago({String? observaciones}) async {
     if (_cliente == null || _cuotaSeleccionada == null) return false;
+    
     final numero = _cuotaSeleccionada!;
     final monto = numero == _cliente!.plazoDias
         ? _cliente!.ultimaCuota
         : _cliente!.cuotaDiaria;
+    
     debugPrint('🔔 [VM] registrarPago -> cuota: $numero, monto: $monto');
 
-    final ok = await _repo.registrarPago(_cliente!.id, numero, monto);
+    // Obtener ubicación antes de registrar el pago
+    debugPrint('🔔 [VM] Obteniendo ubicación para el pago...');
+    LocationData? ubicacion;
+    try {
+      ubicacion = await _locationService.getCurrentLocation();
+      if (ubicacion != null) {
+        debugPrint('✅ [VM] Ubicación obtenida: ${ubicacion.latitude}, ${ubicacion.longitude}');
+      } else {
+        debugPrint('⚠️ [VM] No se pudo obtener ubicación, continuando sin ella');
+      }
+    } catch (e) {
+      debugPrint('❌ [VM] Error obteniendo ubicación: $e');
+    }
+
+    // Registrar pago con ubicación
+    final ok = await _repo.registrarPago(
+      _cliente!.id, 
+      numero, 
+      monto,
+      latitud: ubicacion?.latitude,
+      longitud: ubicacion?.longitude,
+      direccion: ubicacion?.address,
+    );
+    
     debugPrint('🔔 [VM] resultado registrarPago: $ok');
+    
     if (ok) {
+      // Si hay observaciones, registrar evento
+      if (observaciones != null && observaciones.isNotEmpty) {
+        await registrarEvento(observaciones);
+      }
       await loadData(_cliente!.id);
     }
     return ok;
@@ -214,20 +248,53 @@ class TarjetaClienteViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // 1) Llamada a repo (dispara triggers en la BD)
-    final ok = await _repo.refinanciar(_cliente!.id, monto, plazo);
+    try {
+      // Obtener ubicación para el refinanciamiento
+      debugPrint('🔔 [VM] Obteniendo ubicación para refinanciamiento...');
+      LocationData? ubicacion;
+      try {
+        ubicacion = await _locationService.getCurrentLocation();
+        if (ubicacion != null) {
+          debugPrint('✅ [VM] Ubicación obtenida para refinanciamiento');
+        }
+      } catch (e) {
+        debugPrint('❌ [VM] Error obteniendo ubicación: $e');
+      }
 
-    if (ok) {
-      // 2) Guarda evento en historial
+      // Llamar a la función RPC con ubicación
+      // NOTA: Esta función retorna void, no bool
+      debugPrint('🔔 [VM] Enviando a RPC refinanciamiento: lat=${ubicacion?.latitude}, lng=${ubicacion?.longitude}, dir=${ubicacion?.address}');
+      
+      await _supabase.rpc(
+        'abrir_nuevo_credito_con_ubicacion',
+        params: {
+          'p_cliente_id': _cliente!.id,
+          'p_monto_solicitado': monto + (_cliente!.saldoPendiente.toDouble()),
+          'p_plazo_dias': plazo,
+          'p_fecha_primer_pago': DateTime.now().toIso8601String().split('T')[0],
+          'p_latitud': ubicacion?.latitude,
+          'p_longitud': ubicacion?.longitude,
+          'p_direccion': ubicacion?.address,
+        },
+      );
+
+      // Si llegamos aquí sin excepción, fue exitoso
+      debugPrint('✅ [VM] Refinanciamiento exitoso');
+      
+      // Guarda evento en historial
       await registrarEvento(
           'Refinanciamiento: +S/${monto.toStringAsFixed(2)} a $plazo días');
-      // 3) Recarga datos desde cero
+      // Recarga datos desde cero
       await loadData(_cliente!.id);
+      
+      return true;
+    } catch (e) {
+      debugPrint('❌ [VM] Error en refinanciamiento: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
-    return ok;
   }
 
   // ─────────────────────────────────────────────────────
@@ -306,23 +373,47 @@ class TarjetaClienteViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    final ok = await _repo.nuevoCredito(
-      _cliente!.id,
-      _nuevoMontoSolicitado,
-      _nuevoPlazo,
-      _nuevaFechaPrimerPago!,
-    );
+    try {
+      // Obtener ubicación
+      debugPrint('🔔 [VM] Obteniendo ubicación para nuevo crédito...');
+      LocationData? ubicacion;
+      try {
+        ubicacion = await _locationService.getCurrentLocation();
+      } catch (e) {
+        debugPrint('❌ [VM] Error obteniendo ubicación: $e');
+      }
 
-    debugPrint('🔔 [VM] resultado confirmarNuevoCredito: $ok');
+      // Usar la función RPC con ubicación
+      // NOTA: Esta función retorna void, no bool
+      debugPrint('🔔 [VM] Enviando a RPC nuevo crédito: lat=${ubicacion?.latitude}, lng=${ubicacion?.longitude}, dir=${ubicacion?.address}');
+      
+      await _supabase.rpc(
+        'abrir_nuevo_credito_con_ubicacion',
+        params: {
+          'p_cliente_id': _cliente!.id,
+          'p_monto_solicitado': _nuevoMontoSolicitado,
+          'p_plazo_dias': _nuevoPlazo,
+          'p_fecha_primer_pago': _nuevaFechaPrimerPago!.toIso8601String().split('T')[0],
+          'p_latitud': ubicacion?.latitude,
+          'p_longitud': ubicacion?.longitude,
+          'p_direccion': ubicacion?.address,
+        },
+      );
 
-    if (ok) {
-      debugPrint('🔔 [VM] nuevo crédito OK, recargando datos...');
+      // Si llegamos aquí sin excepción, fue exitoso
+      debugPrint('✅ [VM] Nuevo crédito creado exitosamente');
+      
+      // Recarga datos
       await loadData(_cliente!.id);
+      
+      return true;
+    } catch (e) {
+      debugPrint('❌ [VM] Error en nuevo crédito: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
-    return ok;
   }
 
   // Agregar justo después de confirmarNuevoCredito()

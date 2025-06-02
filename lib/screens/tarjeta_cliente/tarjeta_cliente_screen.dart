@@ -638,14 +638,15 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildHistRow(
-                              label: 'Inicio:',
-                              value: _formatFecha(h.fechaInicio)),
+                          if (h.fechaInicio != null)
+                            _buildHistRow(
+                                label: 'Inicio:',
+                                value: _formatFecha(h.fechaInicio)),
                           _buildHistRow(
                               label: 'Fin:',
                               value: _formatFecha(h.fechaCierreReal)),
                           _buildHistRow(
-                              label: 'Monto solicitado:',
+                              label: 'Monto prestado:', // NO "solicitado"
                               value: 'S/${h.montoSolicitado}'),
                           _buildHistRow(
                               label: 'Total pagado:',
@@ -654,7 +655,7 @@ class _TarjetaClienteScreenState extends State<TarjetaClienteScreen> {
                               label: 'Días totales:',
                               value: '${h.diasTotales}'),
                           _buildHistRow(
-                              label: 'Días de atraso:',
+                              label: 'Días atraso máx:', // Cambiar etiqueta
                               value: '${h.diasAtrasoMax}'),
                         ],
                       ),

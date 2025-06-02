@@ -1,7 +1,7 @@
 // lib/models/historial_read.dart
 
 class HistorialRead {
-  final DateTime fechaInicio;
+  final DateTime? fechaInicio;  // Ahora es nullable
   final DateTime? fechaCierreReal;
   final num montoSolicitado;
   final num totalPagado;
@@ -9,7 +9,7 @@ class HistorialRead {
   final int diasAtrasoMax;
 
   HistorialRead({
-    required this.fechaInicio,
+    this.fechaInicio,  // Ya no es required
     this.fechaCierreReal,
     required this.montoSolicitado,
     required this.totalPagado,
@@ -18,7 +18,9 @@ class HistorialRead {
   });
 
   factory HistorialRead.fromMap(Map<String, dynamic> m) => HistorialRead(
-        fechaInicio: DateTime.parse(m['fecha_inicio'] as String),
+        fechaInicio: m['fecha_inicio'] == null
+            ? null
+            : DateTime.parse(m['fecha_inicio'] as String),
         fechaCierreReal: m['fecha_cierre_real'] == null
             ? null
             : DateTime.parse(m['fecha_cierre_real'] as String),

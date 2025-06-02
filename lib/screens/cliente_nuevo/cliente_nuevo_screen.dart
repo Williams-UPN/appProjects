@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../../models/cliente.dart';
 import '../../viewmodels/cliente_nuevo_viewmodel.dart';
+import '../../services/location_service.dart';
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -33,6 +34,7 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
   String? _direccionConfirmadaDelMapa;
 
   late final ClienteNuevoViewModel _vm;
+  final LocationService _locationService = LocationService();
 
   bool _mapaEnLineaVisible = false;
   GoogleMapController? _controladorMapaEnLinea;
@@ -64,31 +66,32 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
   }
 
   Future<void> _checkLocationPermission() async {
-    final status = await Permission.locationWhenInUse.status;
+    final hasPermission = await _locationService.checkLocationPermission();
     if (mounted) {
       setState(() {
-        _mapPermissionGranted = status.isGranted;
+        _mapPermissionGranted = hasPermission;
       });
     }
   }
 
   Future<void> _requestLocationPermission() async {
-    final status = await Permission.locationWhenInUse.request();
+    final hasPermission = await _locationService.requestLocationPermission();
     if (!mounted) return;
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
     setState(() {
-      _mapPermissionGranted = status.isGranted;
+      _mapPermissionGranted = hasPermission;
     });
-    if (status.isPermanentlyDenied) {
-      scaffoldMessenger.showSnackBar(const SnackBar(
-        content: Text(
-            'Permiso de ubicación denegado permanentemente. Habilítelo en la configuración.'),
-        action:
-            SnackBarAction(label: 'Abrir Config.', onPressed: openAppSettings),
-      ));
-    } else if (status.isDenied) {
-      scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text('Permiso de ubicación denegado.')));
+    
+    if (!hasPermission) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Permiso de ubicación denegado.'),
+          action: SnackBarAction(
+            label: 'Abrir Config.', 
+            onPressed: openAppSettings
+          ),
+        ),
+      );
     }
   }
 
@@ -187,12 +190,15 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
 
   Future<void> _toggleYGeocodificarMapa() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
     if (!_mapPermissionGranted) {
       await _requestLocationPermission();
       if (!mounted || !_mapPermissionGranted) {
-        scaffoldMessenger.showSnackBar(const SnackBar(
-            content:
-                Text('Se requiere permiso de ubicación para usar el mapa.')));
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Se requiere permiso de ubicación para usar el mapa.')
+          )
+        );
         return;
       }
     }
@@ -208,103 +214,69 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
       });
     }
 
-    LatLng targetLatLngParaMapa = _limaCentro; // Fallback muy inicial
+    LatLng targetLatLngParaMapa = _limaCentro;
     double zoomInicial = 12.0;
     String infoWindowTitle = 'Ubicación (arrastra para ajustar)';
     String direccionTexto = _direccionCtrl.text.trim();
-    LatLng? ubicacionGpsObtenida;
 
-    if (_mapPermissionGranted) {
-      if (mounted) {
-        setState(() {});
-      }
-      try {
-        Position position = await Geolocator.getCurrentPosition(
-            // ignore: deprecated_member_use
-            desiredAccuracy: LocationAccuracy.medium, // Puedes ajustar esto
-            // ignore: deprecated_member_use
-            timeLimit: const Duration(seconds: 7) // Tiempo límite
-            );
-        ubicacionGpsObtenida = LatLng(position.latitude, position.longitude);
-      } catch (e) {
-        debugPrint("Error obteniendo ubicación GPS: $e");
-        if (mounted && direccionTexto.isEmpty) {
-        } else if (mounted) {}
-      }
-    } else {}
-
-    if (direccionTexto.isNotEmpty) {
-      if (mounted) {
-        setState(() {});
-      }
-      String direccionParaBuscar = direccionTexto;
-      if (!direccionParaBuscar.toLowerCase().contains('lima') &&
-          !direccionParaBuscar.toLowerCase().contains('perú')) {
-        direccionParaBuscar += ", Lima, Perú";
-      }
-      try {
-        List<Location> locations =
-            await locationFromAddress(direccionParaBuscar);
-        if (!mounted) return;
-        if (locations.isNotEmpty) {
-          targetLatLngParaMapa =
-              LatLng(locations.first.latitude, locations.first.longitude);
-          _selectedLocation = targetLatLngParaMapa;
-          infoWindowTitle = direccionTexto;
-          zoomInicial = 17.0;
-          await _actualizarDireccionDesdeCoordenadas(
-              targetLatLngParaMapa, true);
-        } else {
-          if (ubicacionGpsObtenida != null) {
-            targetLatLngParaMapa = ubicacionGpsObtenida;
-            _selectedLocation = targetLatLngParaMapa;
-            infoWindowTitle = 'Ubicación GPS aproximada';
-            zoomInicial = 17.0;
-            await _actualizarDireccionDesdeCoordenadas(
-                targetLatLngParaMapa, true);
-          } else {
-            targetLatLngParaMapa = _limaCentro;
-            _selectedLocation = _limaCentro;
-            zoomInicial = 12.0;
-            await _actualizarDireccionDesdeCoordenadas(_limaCentro, true);
-          }
-        }
-      } catch (e) {
-        debugPrint("Error geocodificando texto: $e");
-        if (mounted) {}
-        if (ubicacionGpsObtenida != null) {
-          targetLatLngParaMapa = ubicacionGpsObtenida;
-          _selectedLocation = targetLatLngParaMapa;
-          infoWindowTitle = 'Ubicación GPS aproximada';
-          zoomInicial = 17.0;
-          await _actualizarDireccionDesdeCoordenadas(
-              targetLatLngParaMapa, true);
-        } else {
-          targetLatLngParaMapa = _limaCentro;
-          _selectedLocation = _limaCentro;
-          zoomInicial = 12.0;
-          await _actualizarDireccionDesdeCoordenadas(_limaCentro, true);
-        }
-      }
-    } else {
-      if (ubicacionGpsObtenida != null) {
-        targetLatLngParaMapa = ubicacionGpsObtenida;
-        _selectedLocation = targetLatLngParaMapa;
-        infoWindowTitle = 'Ubicación GPS actual';
-        zoomInicial = 17.0;
-      } else {
-        targetLatLngParaMapa = _limaCentro;
-        _selectedLocation = _limaCentro;
-        infoWindowTitle = 'Lima Centro (Ajusta la ubicación)';
-        zoomInicial = 12.0;
-      }
-      await _actualizarDireccionDesdeCoordenadas(targetLatLngParaMapa, true);
+    // Intentar obtener ubicación GPS actual
+    LocationData? ubicacionGps;
+    try {
+      ubicacionGps = await _locationService.getCurrentLocation();
+    } catch (e) {
+      debugPrint("Error obteniendo ubicación GPS: $e");
     }
 
+    // Si hay texto de dirección, intentar geocodificar
+    if (direccionTexto.isNotEmpty) {
+      try {
+        LocationData? locationFromAddress = 
+            await _locationService.getLocationFromAddress(direccionTexto);
+        
+        if (locationFromAddress != null && mounted) {
+          targetLatLngParaMapa = LatLng(
+            locationFromAddress.latitude, 
+            locationFromAddress.longitude
+          );
+          _selectedLocation = targetLatLngParaMapa;
+          _direccionCtrl.text = locationFromAddress.address;
+          infoWindowTitle = direccionTexto;
+          zoomInicial = 17.0;
+        } else if (ubicacionGps != null) {
+          // Si no se pudo geocodificar pero tenemos GPS
+          targetLatLngParaMapa = LatLng(ubicacionGps.latitude, ubicacionGps.longitude);
+          _selectedLocation = targetLatLngParaMapa;
+          _direccionCtrl.text = ubicacionGps.address;
+          infoWindowTitle = 'Ubicación GPS aproximada';
+          zoomInicial = 17.0;
+        }
+      } catch (e) {
+        debugPrint("Error geocodificando: $e");
+        // Usar GPS si está disponible
+        if (ubicacionGps != null) {
+          targetLatLngParaMapa = LatLng(ubicacionGps.latitude, ubicacionGps.longitude);
+          _selectedLocation = targetLatLngParaMapa;
+          _direccionCtrl.text = ubicacionGps.address;
+          infoWindowTitle = 'Ubicación GPS';
+          zoomInicial = 17.0;
+        }
+      }
+    } else if (ubicacionGps != null) {
+      // No hay texto pero sí GPS
+      targetLatLngParaMapa = LatLng(ubicacionGps.latitude, ubicacionGps.longitude);
+      _selectedLocation = targetLatLngParaMapa;
+      _direccionCtrl.text = ubicacionGps.address;
+      infoWindowTitle = 'Ubicación GPS actual';
+      zoomInicial = 17.0;
+    }
+
+    // Actualizar el mapa
     if (mounted) {
       setState(() {
-        _posicionCamaraMapaEnLinea =
-            CameraPosition(target: targetLatLngParaMapa, zoom: zoomInicial);
+        _posicionCamaraMapaEnLinea = CameraPosition(
+          target: targetLatLngParaMapa, 
+          zoom: zoomInicial
+        );
         _marcadoresMapaEnLinea = {
           Marker(
             markerId: const MarkerId('puntoSeleccion'),
@@ -318,7 +290,8 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
         };
       });
       _controladorMapaEnLinea?.animateCamera(
-          CameraUpdate.newCameraPosition(_posicionCamaraMapaEnLinea));
+        CameraUpdate.newCameraPosition(_posicionCamaraMapaEnLinea)
+      );
     }
   }
 
@@ -351,67 +324,32 @@ class _ClienteNuevoScreenState extends State<ClienteNuevoScreen> {
   }
 
   Future<void> _actualizarDireccionDesdeCoordenadas(
-      LatLng point, bool actualizarCampoTextoPrincipal) async {
+    LatLng point, 
+    bool actualizarCampoTextoPrincipal
+  ) async {
     if (!mounted) return;
-    if (actualizarCampoTextoPrincipal) {
-      setState(() {});
-    }
 
-    String addressString =
-        'Lat: ${point.latitude.toStringAsFixed(5)}, Lng: ${point.longitude.toStringAsFixed(5)}';
     try {
-      List<Placemark> placemarks =
-          await placemarkFromCoordinates(point.latitude, point.longitude);
-      if (!mounted) return;
+      // Usar el servicio para obtener dirección
+      final locationData = await _locationService.getLocationFromAddress(
+        '${point.latitude},${point.longitude}'
+      );
 
-      if (placemarks.isNotEmpty) {
-        final Placemark place = placemarks.first;
-        String calle = place.thoroughfare ?? place.street ?? '';
-        String numero = place.subThoroughfare ?? '';
-        String nombreSubLocalidad = place.subLocality ?? '';
-        String nombreLocalidad = place.locality ?? '';
-
-        String constructedAddress = calle;
-        if (numero.isNotEmpty) {
-          constructedAddress +=
-              (constructedAddress.isNotEmpty ? ' $numero' : numero);
-        }
-
-        if (nombreSubLocalidad.isNotEmpty) {
-          if (constructedAddress.isNotEmpty &&
-              !constructedAddress
-                  .toLowerCase()
-                  .contains(nombreSubLocalidad.toLowerCase())) {
-            constructedAddress += ', $nombreSubLocalidad';
-          } else if (constructedAddress.isEmpty) {
-            constructedAddress += nombreSubLocalidad;
+      if (mounted && locationData != null) {
+        setState(() {
+          if (actualizarCampoTextoPrincipal) {
+            _direccionCtrl.text = locationData.address;
           }
-        }
-        if (nombreLocalidad.isNotEmpty) {
-          if (constructedAddress.isNotEmpty &&
-              !constructedAddress
-                  .toLowerCase()
-                  .contains(nombreLocalidad.toLowerCase())) {
-            constructedAddress += ', $nombreLocalidad';
-          } else if (constructedAddress.isEmpty) {
-            constructedAddress += nombreLocalidad;
-          }
-        }
-        addressString = constructedAddress.isNotEmpty
-            ? constructedAddress
-            : 'Dirección detallada no disponible.';
-      } else {
-        addressString =
-            'No se pudo obtener dirección detallada de las coordenadas.';
+        });
       }
     } catch (e) {
-      debugPrint('Error en geocodificación inversa: $e');
-      addressString = 'Error al obtener dirección de coordenadas.';
-    } finally {
+      debugPrint('Error obteniendo dirección: $e');
       if (mounted) {
         setState(() {
           if (actualizarCampoTextoPrincipal) {
-            _direccionCtrl.text = addressString;
+            _direccionCtrl.text = 
+              'Lat: ${point.latitude.toStringAsFixed(5)}, '
+              'Lng: ${point.longitude.toStringAsFixed(5)}';
           }
         });
       }

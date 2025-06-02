@@ -35,9 +35,9 @@ class ClienteRead {
       direccion: m['direccion'] as String,
       negocio: m['negocio'] as String? ?? '',
       estadoReal: m['estado_real'] as String,
-      diasReales: (m['dias_reales'] as num).toInt(),
-      scoreActual: (m['score_actual'] as num).toInt(),
-      hasHistory: m['has_history'] as bool,
+      diasReales: (m['dias_reales'] as num?)?.toInt() ?? 0,
+      scoreActual: (m['score_actual'] as num?)?.toInt() ?? 100,
+      hasHistory: m['has_history'] as bool? ?? false,
       latitud: (m['latitud'] as num?)?.toDouble(), // Lectura del nuevo campo
       longitud: (m['longitud'] as num?)?.toDouble(), // Lectura del nuevo campo
     );

@@ -23,7 +23,12 @@ abstract class ClienteDatasource {
   Future<List<PagoRead>> fetchPagos(int clienteId);
   Future<List<CronogramaRead>> fetchCronograma(int clienteId);
   Future<List<HistorialRead>> fetchHistoriales(int clienteId);
-  Future<bool> registrarPago(int clienteId, int numeroCuota, num monto);
+  Future<bool> registrarPago(
+    int clienteId, 
+    int numeroCuota, 
+    num monto,
+    {double? latitud, double? longitud, String? direccion}
+  );
   Future<bool> registrarEvento(int clienteId, String descripcion);
 
   Future<bool> nuevoCreditoRpc({
@@ -186,16 +191,34 @@ class SupabaseClienteDatasource implements ClienteDatasource {
   }
 
   @override
-  Future<bool> registrarPago(int clienteId, int numeroCuota, num monto) async {
+  Future<bool> registrarPago(
+    int clienteId, 
+    int numeroCuota, 
+    num monto,
+    {double? latitud, double? longitud, String? direccion}
+  ) async {
     debugPrint('🔔 [DS] registrarPago → clienteId=$clienteId, '
-        'cuota=$numeroCuota, monto=$monto');
+        'cuota=$numeroCuota, monto=$monto, '
+        'lat=$latitud, lng=$longitud');
     try {
-      final res = await _supabase.from('pagos').insert({
+      // Construir el mapa de datos
+      final Map<String, dynamic> pagoData = {
         'cliente_id': clienteId,
         'numero_cuota': numeroCuota,
         'monto_pagado': monto,
-      });
-      debugPrint('✅ [DS] insert pagos result = $res');
+      };
+
+      // Agregar ubicación si está disponible
+      if (latitud != null && longitud != null) {
+        pagoData['latitud'] = latitud;
+        pagoData['longitud'] = longitud;
+        if (direccion != null) {
+          pagoData['direccion_cobro'] = direccion;
+        }
+      }
+
+      final res = await _supabase.from('pagos').insert(pagoData);
+      debugPrint('✅ [DS] insert pagos con ubicación result = $res');
       return true;
     } catch (e) {
       debugPrint('❌ [DS] Error registrarPago: $e');
