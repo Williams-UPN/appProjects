@@ -294,75 +294,16 @@ ALTER FUNCTION "public"."_trigger_log_pago"() OWNER TO "postgres";
 CREATE OR REPLACE FUNCTION "public"."_trigger_refinanciar_cliente"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
-DECLARE
-  v_total_pagado NUMERIC;
-  v_max_atraso   INTEGER;
-  v_count_incid  INTEGER;
-  v_fecha_inicio DATE;
 BEGIN
-  -- Métricas del crédito antiguo
-  SELECT
-    COALESCE(SUM(p.monto_pagado),0),
-    COALESCE(MAX(GREATEST(
-      (p.fecha_pago AT TIME ZONE 'America/Lima')::date
-      - cr.fecha_venc, 0
-    )),0),
-    COUNT(*)
-  INTO v_total_pagado, v_max_atraso, v_count_incid
-  FROM public.pagos p
-  JOIN public.cronograma cr
-    ON p.cliente_id = cr.cliente_id
-   AND p.numero_cuota = cr.numero_cuota
-  WHERE p.cliente_id = OLD.id;
-
-  -- Fecha de inicio original
-  SELECT MIN(fecha_venc)
-    INTO v_fecha_inicio
-  FROM public.cronograma
-  WHERE cliente_id = OLD.id;
-
-  -- Archiva en historial
-  INSERT INTO public.cliente_historial(
-    cliente_id, fecha_inicio, fecha_cierre,
-    monto_solicitado, total_pagado,
-    dias_totales, dias_atraso_max,
-    incidencias, observaciones, calificacion
-  ) VALUES (
-    OLD.id,
-    v_fecha_inicio,
-    now(),
-    OLD.monto_solicitado,
-    v_total_pagado,
-    OLD.plazo_dias,
-    v_max_atraso,
-    v_count_incid,
-    NULL,
-    GREATEST(0, LEAST(100, 100 - v_max_atraso*2 - v_count_incid*5))
-  );
-
-  -- *** Nuevo paso: eliminar todos los pagos del viejo crédito
-  DELETE FROM public.pagos
-   WHERE cliente_id = OLD.id;
-
-  -- Regenera cronograma limpio
-  DELETE FROM public.cronograma WHERE cliente_id = OLD.id;
+  -- COMENTAMOS TODO EL CÓDIGO QUE CREA HISTORIAL
+  -- porque abrir_nuevo_credito_con_ubicacion ya lo hace
+  
+  -- Solo borramos pagos y regeneramos cronograma
+  DELETE FROM public.pagos WHERE cliente_id = NEW.id;
+  DELETE FROM public.cronograma WHERE cliente_id = NEW.id;
   PERFORM public._crear_cronograma_aux(NEW.id);
-
-  -- Evento de refinanciamiento
-  INSERT INTO public.historial_eventos(
-    cliente_id, tipo_evento, descripcion
-  ) VALUES (
-    OLD.id,
-    'Refinanciamiento',
-    format(
-      'Refinanciado a S/%s en %s días (nuevo inicio %s)',
-      to_char(NEW.monto_solicitado,'FM999999.00'),
-      NEW.plazo_dias,
-      (NEW.fecha_primer_pago AT TIME ZONE 'America/Lima')::date
-    )
-  );
-
-  -- Ajusta saldo pendiente al nuevo total
+  
+  -- Actualiza saldo
   UPDATE public.clientes
      SET saldo_pendiente = NEW.total_pagar
    WHERE id = NEW.id;
