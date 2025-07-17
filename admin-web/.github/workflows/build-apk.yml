@@ -1,0 +1,80 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      cobrador_id:
+        description: 'Cobrador ID'
+        required: true
+      nombre:
+        description: 'Nombre del cobrador'
+        required: true
+      token:
+        description: 'Token de acceso'
+        required: true
+      credenciales:
+        description: 'Credenciales JSON'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repositorio
+      uses: actions/checkout@v3
+    
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.16.0'
+    
+    - name: Clonar proyecto Flutter
+      run: |
+        # Clonar tu proyecto Flutter (ajusta la URL)
+        git clone https://github.com/TU-USUARIO/TU-PROYECTO-FLUTTER.git flutter-app
+        cd flutter-app
+    
+    - name: Crear archivo de configuración
+      run: |
+        cd flutter-app
+        mkdir -p assets/config
+        echo '${{ github.event.inputs.credenciales }}' > assets/config/app_config.json
+    
+    - name: Get dependencies
+      run: |
+        cd flutter-app
+        flutter pub get
+    
+    - name: Build APK
+      run: |
+        cd flutter-app
+        flutter build apk --release
+    
+    - name: Sign APK (opcional)
+      run: |
+        # Si tienes keystore en secrets
+        # echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+        # jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore release.keystore flutter-app/build/app/outputs/flutter-apk/app-release.apk key0 -storepass ${{ secrets.KEYSTORE_PASSWORD }}
+        echo "APK sin firmar por ahora"
+    
+    - name: Rename APK
+      run: |
+        mv flutter-app/build/app/outputs/flutter-apk/app-release.apk "APK_${{ github.event.inputs.nombre }}_v1.apk"
+    
+    - name: Upload APK as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: APK_${{ github.event.inputs.nombre }}_v1.apk
+        path: "APK_${{ github.event.inputs.nombre }}_v1.apk"
+    
+    - name: Notificar resultado
+      run: |
+        echo "APK generada exitosamente para ${{ github.event.inputs.nombre }}"
+        echo "Descarga disponible en los artifacts del workflow"

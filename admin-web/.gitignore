@@ -35,3 +35,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# APK build system
+storage/base-apk/*.apk
+storage/generated/
+storage/keystore/*.keystore
+tools/aapt2*
+tools/apksigner*
+tools/zipalign*
+!tools/README.md
+!storage/README.md

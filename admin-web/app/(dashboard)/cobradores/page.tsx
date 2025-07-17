@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { 
@@ -37,9 +37,27 @@ export default function CobradoresPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterZona, setFilterZona] = useState('todos')
   const [filterEstado, setFilterEstado] = useState('todos')
+  const [cobradores, setCobradores] = useState<Cobrador[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // Datos de ejemplo
-  const cobradores: Cobrador[] = [
+  useEffect(() => {
+    fetchCobradores()
+  }, [])
+
+  const fetchCobradores = async () => {
+    try {
+      const response = await fetch('/api/cobradores')
+      const data = await response.json()
+      setCobradores(data)
+    } catch (error) {
+      console.error('Error cargando cobradores:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Datos de ejemplo (se reemplazarán con datos reales)
+  const cobradoresEjemplo: Cobrador[] = [
     {
       id: '1',
       nombre: 'Juan Carlos Pérez',
@@ -107,6 +125,14 @@ export default function CobradoresPage() {
     if (percentage >= 75) return 'from-blue-500 to-blue-600'
     if (percentage >= 50) return 'from-amber-500 to-amber-600'
     return 'from-red-500 to-red-600'
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Cargando cobradores...</div>
+      </div>
+    )
   }
 
   return (

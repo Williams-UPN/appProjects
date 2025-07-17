@@ -40,13 +40,71 @@ export default function NuevoCobradorPage() {
     e.preventDefault()
     setStep('generating')
     
-    // Simular proceso de generación
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(resolve => setTimeout(resolve, 300))
-      setProgress(i)
+    try {
+      // Llamar a la API real de generación
+      const response = await fetch('/api/apk/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nombre: formData.nombre,
+          dni: formData.dni,
+          telefono: formData.telefono,
+          email: formData.email,
+        }),
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        // Monitorear progreso real
+        await monitorProgress(result.buildId)
+      } else {
+        throw new Error(result.error || 'Error generando APK')
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error generando APK: ' + error.message)
+      setStep('form')
+      setProgress(0)
+    }
+  }
+  
+  const monitorProgress = async (buildId: string) => {
+    let currentProgress = 0
+    
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/apk/status?buildId=${buildId}`)
+        const status = await response.json()
+        
+        // Actualizar progreso suavemente
+        if (status.progress > currentProgress) {
+          for (let i = currentProgress; i <= status.progress; i += 5) {
+            setProgress(i)
+            await new Promise(resolve => setTimeout(resolve, 50))
+          }
+          currentProgress = status.progress
+        }
+        
+        if (status.estado === 'completed') {
+          setProgress(100)
+          setTimeout(() => setStep('completed'), 500)
+        } else if (status.estado === 'failed') {
+          throw new Error(status.error || 'Build falló')
+        } else {
+          // Seguir verificando
+          setTimeout(checkStatus, 2000)
+        }
+      } catch (error) {
+        console.error('Error monitoreando:', error)
+        alert('Error: ' + error.message)
+        setStep('form')
+      }
     }
     
-    setStep('completed')
+    checkStatus()
   }
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {

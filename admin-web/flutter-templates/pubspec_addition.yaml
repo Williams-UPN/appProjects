@@ -1,0 +1,8 @@
+# Agregar esto a tu pubspec.yaml existente en la sección flutter:
+
+flutter:
+  # ... tu configuración actual ...
+  
+  assets:
+    # ... tus assets actuales ...
+    - assets/config/   # ← AGREGAR ESTA LÍNEA
