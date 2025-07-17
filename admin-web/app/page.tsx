@@ -9,7 +9,6 @@ export default async function Home() {
     redirect('/login')
   }
 
-  // Si hay usuario, mostramos el dashboard directamente
-  const DashboardPage = (await import('./(dashboard)/page')).default
-  return <DashboardPage />
+  // Si hay usuario, redirigir al dashboard (que usará su layout)
+  redirect('/dashboard')
 }
