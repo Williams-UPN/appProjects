@@ -6,9 +6,7 @@
       "Bash(cmd.exe /c \"flutter --version\")",
       "Bash(cmd.exe /c \"flutter doctor\")",
       "Bash(grep:*)",
-      "Bash(rm:*)",
-      "Bash(find:*)",
-      "Bash(mkdir:*)"
+      "Bash(rm:*)"
     ],
     "deny": []
   },
