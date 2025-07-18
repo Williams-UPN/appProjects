@@ -201,7 +201,7 @@ export default function CobradoresPage() {
       window.URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Error downloading APK:', error)
-      alert('Error al descargar APK: ' + error.message)
+      alert('Error al descargar APK: ' + (error instanceof Error ? error.message : 'Error desconocido'))
     }
   }
 
@@ -248,7 +248,7 @@ export default function CobradoresPage() {
       }
     } catch (error) {
       console.error('Error deleting cobrador:', error)
-      alert('❌ Error al eliminar cobrador: ' + error.message)
+      alert('❌ Error al eliminar cobrador: ' + (error instanceof Error ? error.message : 'Error desconocido'))
     } finally {
       setDeleting(false)
     }
