@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import Link from 'next/link'
 import { 
   Search, 
   Filter, 
@@ -110,10 +111,10 @@ export default function ClientesPage() {
           <h1 className="text-3xl font-bold text-gray-900">Clientes</h1>
           <p className="text-gray-500 mt-1">Gestiona todos los clientes del sistema</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary-300 transition-colors">
+        <Link href="/clientes/nuevo" className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary-300 transition-colors">
           <Plus className="w-5 h-5" />
           Nuevo Cliente
-        </button>
+        </Link>
       </div>
 
       {/* Filters */}

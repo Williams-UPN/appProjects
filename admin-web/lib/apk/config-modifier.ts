@@ -32,6 +32,7 @@ export class APKConfigModifier {
         cobrador_dni: config.cobrador_dni,
         supabase_url: config.supabase_url,
         supabase_key: config.supabase_key,
+        admin_url: process.env.NEXTAUTH_URL || 'http://localhost:3000',
         auto_login: true,
         version: '1.0.0',
         generated_at: new Date().toISOString()

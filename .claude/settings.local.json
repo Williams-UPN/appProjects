@@ -8,7 +8,8 @@
       "Bash(grep:*)",
       "Bash(rm:*)",
       "Bash(ls:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(cp:*)"
     ],
     "deny": []
   },
