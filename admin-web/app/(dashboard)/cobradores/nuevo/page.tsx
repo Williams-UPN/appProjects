@@ -65,7 +65,7 @@ export default function NuevoCobradorPage() {
       }
     } catch (error) {
       console.error('Error:', error)
-      alert('Error generando APK: ' + error.message)
+      alert('Error generando APK: ' + (error instanceof Error ? error.message : 'Error desconocido'))
       setStep('form')
       setProgress(0)
     }
@@ -99,7 +99,7 @@ export default function NuevoCobradorPage() {
         }
       } catch (error) {
         console.error('Error monitoreando:', error)
-        alert('Error: ' + error.message)
+        alert('Error: ' + (error instanceof Error ? error.message : 'Error desconocido'))
         setStep('form')
       }
     }
@@ -135,7 +135,7 @@ export default function NuevoCobradorPage() {
       window.URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Error downloading APK:', error)
-      alert('Error al descargar APK: ' + error.message)
+      alert('Error al descargar APK: ' + (error instanceof Error ? error.message : 'Error desconocido'))
     }
   }
 
