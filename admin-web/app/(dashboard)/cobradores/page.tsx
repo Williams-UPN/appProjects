@@ -354,7 +354,7 @@ export default function CobradoresPage() {
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl flex items-center justify-center text-white font-bold text-xl">
-                      {cobrador.nombre.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {cobrador.nombre.split(' ').filter(n => n.length > 0).map(n => n[0]).join('').slice(0, 2)}
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{cobrador.nombre}</h3>

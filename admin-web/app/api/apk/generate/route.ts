@@ -63,9 +63,9 @@ export async function POST(request: NextRequest) {
       console.error('Error creando cobrador:', error)
       return NextResponse.json({ 
         error: 'Error al crear cobrador',
-        details: error.message,
-        hint: error.hint,
-        code: error.code
+        details: error?.message || 'Error desconocido',
+        hint: error?.hint || '',
+        code: error?.code || ''
       }, { status: 500 })
     }
     
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
         .from('apk_builds')
         .update({
           estado: 'failed',
-          error_mensaje: localError.message,
+          error_mensaje: localError instanceof Error ? localError.message : 'Error desconocido',
           fecha_fin: new Date().toISOString()
         })
         .eq('id', build.id)
@@ -215,15 +215,15 @@ export async function POST(request: NextRequest) {
           .from('apk_builds')
           .update({
             estado: 'failed',
-            error_mensaje: `Local: ${localError.message}, GitHub: ${githubError.message}`
+            error_mensaje: `Local: ${localError instanceof Error ? localError.message : 'Error'}, GitHub: ${githubError instanceof Error ? githubError.message : 'Error'}`
           })
           .eq('id', build.id)
         
         return NextResponse.json({ 
           error: 'Ambos métodos de build fallaron',
           details: {
-            local: localError.message,
-            github: githubError.message
+            local: localError instanceof Error ? localError.message : 'Error desconocido',
+            github: githubError instanceof Error ? githubError.message : 'Error desconocido'
           }
         }, { status: 500 })
       }

@@ -76,7 +76,7 @@ export class APKConfigModifier {
       
     } catch (error) {
       console.error('[APKConfigModifier] Error:', error)
-      throw new Error(`Error modificando APK: ${error.message}`)
+      throw new Error(`Error modificando APK: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     }
   }
   

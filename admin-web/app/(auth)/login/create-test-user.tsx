@@ -17,7 +17,7 @@ export default function CreateTestUser() {
       })
       
       if (error) {
-        setMessage('Error: ' + error.message)
+        setMessage('Error: ' + (error?.message || 'Error desconocido'))
       } else {
         setMessage('Usuario creado! Email: admin@test.com, Password: 123456')
       }

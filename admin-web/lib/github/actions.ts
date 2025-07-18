@@ -55,7 +55,7 @@ export class GitHubActionsBuilder {
       })
       
       if (runs.workflow_runs.length > 0) {
-        const run = runs.workflow_runs[0]
+        const run = runs.workflow_runs?.[0]
         return {
           id: run.id,
           url: run.html_url
@@ -127,7 +127,7 @@ export class GitHubActionsBuilder {
       return {
         completed: false,
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Error desconocido'
       }
     }
   }

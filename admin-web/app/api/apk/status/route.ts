@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         
         // Extraer workflow ID del log
         const workflowIdMatch = build.log_build?.match(/GitHub Actions workflow: (\d+)/)
-        if (workflowIdMatch) {
+        if (workflowIdMatch && workflowIdMatch[1]) {
           const workflowId = workflowIdMatch[1]
           const status = await githubBuilder.checkStatus(workflowId)
           

@@ -14,9 +14,9 @@ export async function GET(request: NextRequest) {
     if (error) {
       return NextResponse.json({ 
         error: 'Error leyendo base de datos',
-        details: error.message,
-        hint: error.hint,
-        code: error.code
+        details: error?.message || 'Error desconocido',
+        hint: error?.hint || '',
+        code: error?.code || ''
       }, { status: 500 })
     }
     
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({ 
       error: 'Error general',
-      message: error.message
+      message: error instanceof Error ? error.message : 'Error desconocido'
     }, { status: 500 })
   }
 }
