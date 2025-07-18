@@ -1,0 +1,9 @@
+{
+  "cobrador_token": "PLACEHOLDER_TOKEN",
+  "cobrador_nombre": "PLACEHOLDER_NOMBRE",
+  "cobrador_dni": "PLACEHOLDER_DNI",
+  "supabase_url": "https://dlpvictozfwiyjgxgwif.supabase.co",
+  "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRscHZpY3RvemZ3aXlqZ3hnd2lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2OTA2NTYsImV4cCI6MjA2MDI2NjY1Nn0.WZrvX1sBLZ65xpZ3bK_50A_WhtoYjsQWvcJNzk3Kuoc",
+  "auto_login": true,
+  "version": "1.0.0"
+}

@@ -37,11 +37,39 @@ export class APKConfigModifier {
         generated_at: new Date().toISOString()
       }
       
-      // 4. Actualizar archivo en el ZIP
-      zip.updateFile(configPath, Buffer.from(JSON.stringify(newConfig, null, 2)))
+      // 4. Verificar si el archivo de configuración existe
+      const configEntry = zip.getEntry(configPath)
+      if (!configEntry) {
+        console.warn('[APKConfigModifier] Archivo de configuración no encontrado, creando uno nuevo')
+        // Crear el archivo si no existe
+        zip.addFile(configPath, Buffer.from(JSON.stringify(newConfig, null, 2)))
+      } else {
+        // Actualizar archivo existente
+        zip.updateFile(configPath, Buffer.from(JSON.stringify(newConfig, null, 2)))
+      }
       
-      // 5. Guardar APK modificado
-      zip.writeZip(apkPath)
+      // 5. Crear un nuevo APK con compresión mínima para preservar integridad
+      const newZip = new AdmZip()
+      const entries = zip.getEntries()
+      
+      // Copiar todas las entradas al nuevo ZIP con configuración actualizada
+      for (const entry of entries) {
+        if (entry.entryName === configPath) {
+          // Usar la nueva configuración
+          newZip.addFile(entry.entryName, Buffer.from(JSON.stringify(newConfig, null, 2)))
+        } else {
+          // Copiar el resto de archivos tal como están
+          newZip.addFile(entry.entryName, entry.getData())
+        }
+      }
+      
+      // Si no había archivo de configuración, agregarlo
+      if (!configEntry) {
+        newZip.addFile(configPath, Buffer.from(JSON.stringify(newConfig, null, 2)))
+      }
+      
+      // 6. Escribir el nuevo APK
+      newZip.writeZip(apkPath)
       
       console.log('[APKConfigModifier] APK modificado exitosamente')
       

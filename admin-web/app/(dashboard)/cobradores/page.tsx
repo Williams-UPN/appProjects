@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { 
@@ -17,20 +18,38 @@ import {
   Signal,
   SignalZero,
   Clock,
-  CheckCircle
+  CheckCircle,
+  Check,
+  X
 } from 'lucide-react'
 
 interface Cobrador {
   id: string
   nombre: string
+  dni: string
   telefono: string
-  zona: string
-  estado: 'online' | 'offline' | 'sin_apk'
-  apkVersion: string | null
-  ultimaConexion: string
-  cobrosHoy: number
-  metaHoy: number
-  foto?: string
+  email: string
+  zona_trabajo: string
+  estado: 'activo' | 'inactivo' | 'suspendido'
+  apk_version: string | null
+  fecha_creacion: string
+  ultima_conexion: string | null
+  ultimo_build_estado: string | null
+  ultimo_build_fecha: string | null
+  ultimo_build_metodo: string | null
+  total_builds: number
+  token_acceso: string
+}
+
+interface DeleteModalData {
+  id: string
+  nombre: string
+}
+
+interface SuccessModalData {
+  show: boolean
+  message: string
+  nombre?: string
 }
 
 export default function CobradoresPage() {
@@ -39,59 +58,86 @@ export default function CobradoresPage() {
   const [filterEstado, setFilterEstado] = useState('todos')
   const [cobradores, setCobradores] = useState<Cobrador[]>([])
   const [loading, setLoading] = useState(true)
+  const [showDeleteMenu, setShowDeleteMenu] = useState<string | null>(null)
+  const [deleteModal, setDeleteModal] = useState<DeleteModalData | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [successModal, setSuccessModal] = useState<SuccessModalData>({ show: false, message: '' })
 
   useEffect(() => {
+    setMounted(true)
     fetchCobradores()
+  }, [])
+
+  // Cerrar menú al hacer clic afuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element
+      if (!target.closest('.menu-container')) {
+        setShowDeleteMenu(null)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
   const fetchCobradores = async () => {
     try {
       const response = await fetch('/api/cobradores')
       const data = await response.json()
-      setCobradores(data)
+      if (data.success) {
+        setCobradores(data.cobradores || [])
+      } else {
+        console.error('Error en respuesta:', data.error)
+        setCobradores([])
+      }
     } catch (error) {
       console.error('Error cargando cobradores:', error)
+      setCobradores([])
     } finally {
       setLoading(false)
     }
   }
 
-  // Datos de ejemplo (se reemplazarán con datos reales)
-  const cobradoresEjemplo: Cobrador[] = [
-    {
-      id: '1',
-      nombre: 'Juan Carlos Pérez',
-      telefono: '999888777',
-      zona: 'Norte',
-      estado: 'online',
-      apkVersion: 'v1',
-      ultimaConexion: 'Hace 5 min',
-      cobrosHoy: 4500,
-      metaHoy: 5000
-    },
-    {
-      id: '2',
-      nombre: 'María López',
-      telefono: '987654321',
-      zona: 'Sur',
-      estado: 'offline',
-      apkVersion: 'v1',
-      ultimaConexion: 'Hace 2 horas',
-      cobrosHoy: 3200,
-      metaHoy: 4000
-    },
-    {
-      id: '3',
-      nombre: 'Carlos Ruiz',
-      telefono: '912345678',
-      zona: 'Centro',
-      estado: 'sin_apk',
-      apkVersion: null,
-      ultimaConexion: 'Nunca',
-      cobrosHoy: 0,
-      metaHoy: 4500
+  // Determinar estado para visualización
+  const getEstadoVisual = (cobrador: Cobrador) => {
+    if (!cobrador.apk_version || !cobrador.ultimo_build_estado) {
+      return 'sin_apk'
     }
-  ]
+    
+    if (cobrador.ultimo_build_estado !== 'completed') {
+      return 'sin_apk'
+    }
+    
+    if (cobrador.ultima_conexion) {
+      const ultimaConexion = new Date(cobrador.ultima_conexion)
+      const ahora = new Date()
+      const horasDiferencia = (ahora.getTime() - ultimaConexion.getTime()) / (1000 * 60 * 60)
+      
+      if (horasDiferencia < 1) return 'online'
+    }
+    
+    return 'offline'
+  }
+
+  // Formatear fecha relativa
+  const formatearFecha = (fecha: string | null): string => {
+    if (!fecha) return 'Nunca'
+    
+    const date = new Date(fecha)
+    const ahora = new Date()
+    const diferencia = ahora.getTime() - date.getTime()
+    
+    const minutos = Math.floor(diferencia / 60000)
+    const horas = Math.floor(diferencia / 3600000)
+    const dias = Math.floor(diferencia / 86400000)
+    
+    if (minutos < 60) return `Hace ${minutos} min`
+    if (horas < 24) return `Hace ${horas} horas`
+    if (dias < 30) return `Hace ${dias} días`
+    
+    return date.toLocaleDateString()
+  }
 
   const getEstadoBadge = (estado: string) => {
     switch (estado) {
@@ -116,6 +162,95 @@ export default function CobradoresPage() {
             Sin APK
           </span>
         )
+    }
+  }
+
+  // Filtrar cobradores
+  const cobradoresFiltrados = cobradores.filter(cobrador => {
+    const cumpleBusqueda = searchTerm === '' || 
+      cobrador.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cobrador.telefono.includes(searchTerm) ||
+      cobrador.dni.includes(searchTerm)
+    
+    const cumpleZona = filterZona === 'todos' || 
+      (cobrador.zona_trabajo && cobrador.zona_trabajo.toLowerCase().includes(filterZona.toLowerCase()))
+    
+    const estadoVisual = getEstadoVisual(cobrador)
+    const cumpleEstado = filterEstado === 'todos' || estadoVisual === filterEstado
+    
+    return cumpleBusqueda && cumpleZona && cumpleEstado
+  })
+
+  // Descargar APK
+  const downloadApk = async (cobradorId: string, nombre: string) => {
+    try {
+      const response = await fetch(`/api/apk/download?cobradorId=${cobradorId}`)
+      
+      if (!response.ok) {
+        throw new Error('Error al descargar APK')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `APK_${nombre.replace(/\s+/g, '')}_v1.apk`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error downloading APK:', error)
+      alert('Error al descargar APK: ' + error.message)
+    }
+  }
+
+  // Abrir modal de confirmación
+  const openDeleteModal = (cobradorId: string, nombre: string) => {
+    setDeleteModal({ id: cobradorId, nombre })
+    setShowDeleteMenu(null) // Cerrar menú de opciones
+  }
+
+  // Eliminar cobrador
+  const deleteCobrador = async () => {
+    if (!deleteModal) return
+    
+    setDeleting(true)
+    
+    try {
+      const response = await fetch(`/api/cobradores?id=${deleteModal.id}`, {
+        method: 'DELETE'
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        // Actualizar la lista eliminando el cobrador
+        setCobradores(prev => prev.filter(c => c.id !== deleteModal.id))
+        const nombreEliminado = deleteModal.nombre
+        setDeleteModal(null)
+        
+        // Mostrar modal de éxito elegante
+        setTimeout(() => {
+          setSuccessModal({
+            show: true,
+            message: 'Cobrador eliminado correctamente',
+            nombre: nombreEliminado
+          })
+          
+          // Auto-cerrar después de 2 segundos
+          setTimeout(() => {
+            setSuccessModal({ show: false, message: '' })
+          }, 2000)
+        }, 300)
+      } else {
+        throw new Error(result.error || 'Error eliminando cobrador')
+      }
+    } catch (error) {
+      console.error('Error deleting cobrador:', error)
+      alert('❌ Error al eliminar cobrador: ' + error.message)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -200,8 +335,9 @@ export default function CobradoresPage() {
 
       {/* Cobradores Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {cobradores.map((cobrador, index) => {
-          const progress = (cobrador.cobrosHoy / cobrador.metaHoy) * 100
+        {cobradoresFiltrados.map((cobrador, index) => {
+          const estadoVisual = getEstadoVisual(cobrador)
+          const fechaFormateada = formatearFecha(cobrador.ultima_conexion)
           
           return (
             <motion.div
@@ -210,7 +346,8 @@ export default function CobradoresPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
               whileHover={{ y: -4 }}
-              className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all"
+              className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all relative"
+              style={{ overflow: 'visible' }}
             >
               {/* Header */}
               <div className="p-6 border-b border-gray-100">
@@ -227,47 +364,80 @@ export default function CobradoresPage() {
                       </div>
                     </div>
                   </div>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <MoreVertical className="w-5 h-5 text-gray-400" />
-                  </motion.button>
+                  <div className="relative menu-container">
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        console.log('Menu clicked for:', cobrador.nombre) // Debug
+                        setShowDeleteMenu(showDeleteMenu === cobrador.id ? null : cobrador.id)
+                      }}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <MoreVertical className="w-5 h-5 text-gray-400" />
+                    </motion.button>
+                    
+                    {showDeleteMenu === cobrador.id && (
+                      <div 
+                        className="absolute right-0 top-12 bg-white border-2 border-red-200 rounded-lg shadow-2xl min-w-[150px]"
+                        style={{ zIndex: 9999 }}
+                      >
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            openDeleteModal(cobrador.id, cobrador.nombre)
+                          }}
+                          className="w-full px-4 py-3 text-left text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2 font-medium"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Eliminar
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <MapPin className="w-4 h-4" />
-                    Zona {cobrador.zona}
+                    {cobrador.zona_trabajo || 'Sin asignar'}
                   </div>
-                  {getEstadoBadge(cobrador.estado)}
+                  {getEstadoBadge(estadoVisual)}
                 </div>
               </div>
 
-              {/* Progress */}
+              {/* Info */}
               <div className="p-6 bg-gray-50">
-                <div className="mb-4">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-600">Cobros del día</span>
-                    <span className="font-medium text-gray-900">
-                      S/ {cobrador.cobrosHoy.toLocaleString()} / {cobrador.metaHoy.toLocaleString()}
-                    </span>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">DNI:</span>
+                    <span className="text-gray-700">{cobrador.dni}</span>
                   </div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(progress, 100)}%` }}
-                      transition={{ duration: 1, delay: 0.5 + index * 0.1 }}
-                      className={`h-full bg-gradient-to-r ${getProgressColor(cobrador.cobrosHoy, cobrador.metaHoy)}`}
-                    />
+                  
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Total APKs:</span>
+                    <span className="text-gray-700">{cobrador.total_builds || 0}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 text-right">{progress.toFixed(0)}%</p>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Última conexión:</span>
-                  <span className="text-gray-700">{cobrador.ultimaConexion}</span>
+                  
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Última conexión:</span>
+                    <span className="text-gray-700">{fechaFormateada}</span>
+                  </div>
+                  
+                  {cobrador.ultimo_build_estado && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Último APK:</span>
+                      <span className={`text-sm font-medium ${
+                        cobrador.ultimo_build_estado === 'completed' ? 'text-green-600' : 
+                        cobrador.ultimo_build_estado === 'failed' ? 'text-red-600' : 'text-amber-600'
+                      }`}>
+                        {cobrador.ultimo_build_estado}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -282,11 +452,12 @@ export default function CobradoresPage() {
                   Ver
                 </motion.button>
                 
-                {cobrador.apkVersion ? (
+                {cobrador.apk_version && cobrador.ultimo_build_estado === 'completed' ? (
                   <>
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
+                      onClick={() => downloadApk(cobrador.id, cobrador.nombre)}
                       className="flex-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg font-medium text-sm flex items-center justify-center gap-1.5 hover:bg-blue-200 transition-colors"
                     >
                       <Download className="w-4 h-4" />
@@ -335,9 +506,9 @@ export default function CobradoresPage() {
           transition={{ delay: 0.1 }}
           className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white"
         >
-          <h3 className="text-white/80 text-sm font-medium">En Línea</h3>
+          <h3 className="text-white/80 text-sm font-medium">Con APK</h3>
           <p className="text-3xl font-bold mt-2">
-            {cobradores.filter(c => c.estado === 'online').length}
+            {cobradores.filter(c => c.apk_version && c.ultimo_build_estado === 'completed').length}
           </p>
         </motion.div>
 
@@ -347,9 +518,9 @@ export default function CobradoresPage() {
           transition={{ delay: 0.2 }}
           className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-6 text-white"
         >
-          <h3 className="text-white/80 text-sm font-medium">Cobro Total Hoy</h3>
+          <h3 className="text-white/80 text-sm font-medium">Sin APK</h3>
           <p className="text-3xl font-bold mt-2">
-            S/ {cobradores.reduce((sum, c) => sum + c.cobrosHoy, 0).toLocaleString()}
+            {cobradores.filter(c => !c.apk_version || c.ultimo_build_estado !== 'completed').length}
           </p>
         </motion.div>
 
@@ -359,15 +530,209 @@ export default function CobradoresPage() {
           transition={{ delay: 0.3 }}
           className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 text-white"
         >
-          <h3 className="text-white/80 text-sm font-medium">Cumplimiento</h3>
+          <h3 className="text-white/80 text-sm font-medium">Total APKs</h3>
           <p className="text-3xl font-bold mt-2">
-            {Math.round(
-              (cobradores.reduce((sum, c) => sum + c.cobrosHoy, 0) / 
-               cobradores.reduce((sum, c) => sum + c.metaHoy, 0)) * 100
-            )}%
+            {cobradores.reduce((sum, c) => sum + (c.total_builds || 0), 0)}
           </p>
         </motion.div>
       </div>
+
+      {/* Modal de Confirmación Elegante - Renderizado con Portal */}
+      {mounted && deleteModal && createPortal(
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          style={{ 
+            zIndex: 999999,
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh'
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden relative"
+            style={{ zIndex: 1000000 }}
+          >
+            {/* Header */}
+            <div className="p-8 text-center">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.1 }}
+                className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6"
+              >
+                <Trash2 className="w-10 h-10 text-red-600" />
+              </motion.div>
+              
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">
+                Eliminar Cobrador
+              </h3>
+              
+              <p className="text-gray-600 mb-2">
+                ¿Estás seguro de eliminar a <strong>{deleteModal.nombre}</strong>?
+              </p>
+              
+              <div className="bg-red-50 rounded-xl p-4 mt-4">
+                <p className="text-sm text-red-700 text-left">
+                  <strong>Esta acción eliminará:</strong>
+                </p>
+                <ul className="text-sm text-red-600 mt-2 space-y-1 text-left">
+                  <li>• El cobrador y su información</li>
+                  <li>• Todo su historial de APKs</li>
+                  <li>• Todos los archivos generados</li>
+                </ul>
+                <p className="text-sm text-red-800 font-medium mt-3 text-center">
+                  ⚠️ Esta acción NO se puede deshacer
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-8 pb-8 flex gap-3">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setDeleteModal(null)}
+                disabled={deleting}
+                className="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </motion.button>
+              
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={deleteCobrador}
+                disabled={deleting}
+                className="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleting ? (
+                  <>
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
+                    />
+                    Eliminando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Eliminar
+                  </>
+                )}
+              </motion.button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal de Éxito Elegante */}
+      {mounted && successModal.show && createPortal(
+        <div 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4"
+          style={{ 
+            zIndex: 999999,
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh'
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 50 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 50 }}
+            className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden relative"
+            style={{ zIndex: 1000000 }}
+          >
+            {/* Header con gradiente verde */}
+            <div className="bg-gradient-to-br from-green-500 to-green-600 p-8 text-center relative">
+              {/* Botón cerrar */}
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setSuccessModal({ show: false, message: '' })}
+                className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+              >
+                <X className="w-4 h-4 text-white" />
+              </motion.button>
+
+              {/* Icono de éxito animado */}
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4"
+              >
+                <Check className="w-10 h-10 text-green-600" />
+              </motion.div>
+              
+              <motion.h3 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="text-2xl font-bold text-white mb-2"
+              >
+                ¡Éxito!
+              </motion.h3>
+              
+              <motion.p 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="text-green-100"
+              >
+                {successModal.message}
+              </motion.p>
+            </div>
+
+            {/* Contenido */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="p-6 text-center"
+            >
+              {successModal.nombre && (
+                <div className="bg-green-50 rounded-xl p-4 mb-4">
+                  <p className="text-green-800 font-medium">
+                    <strong>{successModal.nombre}</strong> ha sido eliminado
+                  </p>
+                  <p className="text-sm text-green-600 mt-1">
+                    Todos los datos asociados fueron removidos
+                  </p>
+                </div>
+              )}
+              
+              {/* Barra de progreso de auto-cierre */}
+              <div className="w-full bg-gray-200 rounded-full h-1 mb-4">
+                <motion.div
+                  initial={{ width: '100%' }}
+                  animate={{ width: '0%' }}
+                  transition={{ duration: 2, ease: "linear" }}
+                  className="h-1 bg-gradient-to-r from-green-500 to-green-600 rounded-full"
+                />
+              </div>
+              
+              <p className="text-xs text-gray-500">
+                Se cerrará automáticamente en 2 segundos
+              </p>
+            </motion.div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

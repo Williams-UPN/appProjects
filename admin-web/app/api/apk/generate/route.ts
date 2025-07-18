@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
       const builder = new APKBuilder()
       const startTime = Date.now()
       
-      const apkPath = await builder.buildAPK({
+      const apkResult = await builder.buildAPK({
         cobradorId: cobrador.id,
         nombre,
         token,
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         .from('apk_builds')
         .update({
           estado: 'completed',
-          apk_url: apkPath,
+          apk_url: apkResult.path,
           fecha_fin: new Date().toISOString(),
           tiempo_build: buildTime
         })
@@ -124,8 +124,8 @@ export async function POST(request: NextRequest) {
       await supabase
         .from('cobradores')
         .update({
-          apk_url: apkPath,
-          apk_version: 'v1'
+          apk_url: apkResult.path,
+          apk_version: apkResult.version
         })
         .eq('id', cobrador.id)
       
@@ -145,7 +145,9 @@ export async function POST(request: NextRequest) {
         success: true,
         buildId: build.id,
         cobradorId: cobrador.id,
-        apkUrl: apkPath,
+        apkUrl: apkResult.path,
+        fileSize: apkResult.fileSize,
+        version: apkResult.version,
         metodo: 'local',
         tiempo: buildTime
       })

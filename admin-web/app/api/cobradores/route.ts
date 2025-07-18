@@ -32,7 +32,10 @@ export async function GET(request: NextRequest) {
       ultimoBuildFecha: cobrador.ultimo_build_fecha
     })) || []
     
-    return NextResponse.json(formattedCobradores)
+    return NextResponse.json({ 
+      success: true, 
+      cobradores: formattedCobradores 
+    })
     
   } catch (error) {
     console.error('Error en GET /api/cobradores:', error)

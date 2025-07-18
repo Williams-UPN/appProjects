@@ -18,8 +18,7 @@ import {
   EyeOff,
   RefreshCw,
   Shield,
-  CreditCard,
-  Camera
+  CreditCard
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -29,12 +28,11 @@ export default function NuevoCobradorPage() {
     nombre: '',
     telefono: '',
     dni: '',
-    email: '',
-    foto: null as File | null
+    email: ''
   })
   const [progress, setProgress] = useState(0)
   const [showToken, setShowToken] = useState(false)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [buildResult, setBuildResult] = useState<any>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,6 +56,8 @@ export default function NuevoCobradorPage() {
       const result = await response.json()
       
       if (result.success) {
+        // Guardar resultado para descarga
+        setBuildResult(result)
         // Monitorear progreso real
         await monitorProgress(result.buildId)
       } else {
@@ -107,12 +107,35 @@ export default function NuevoCobradorPage() {
     checkStatus()
   }
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setFormData({...formData, foto: file})
-      const url = URL.createObjectURL(file)
-      setPreviewUrl(url)
+  const downloadApk = async () => {
+    if (!buildResult) {
+      alert('No hay APK para descargar')
+      return
+    }
+
+    try {
+      // Usar buildId para descargar
+      const response = await fetch(`/api/apk/download?buildId=${buildResult.buildId}`)
+      
+      if (!response.ok) {
+        throw new Error('Error al descargar APK')
+      }
+
+      // Obtener el archivo como blob
+      const blob = await response.blob()
+      
+      // Crear URL temporal y descargar
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `APK_${formData.nombre.replace(/\s+/g, '')}_v1.apk`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error downloading APK:', error)
+      alert('Error al descargar APK: ' + error.message)
     }
   }
 
@@ -203,11 +226,11 @@ export default function NuevoCobradorPage() {
                     <div>
                       <h3 className="text-xl font-bold text-gray-900">APK_{formData.nombre.replace(/\s+/g, '')}_v1.apk</h3>
                       <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
-                        <span>Tamaño: 45.3 MB</span>
+                        <span>Tamaño: {buildResult?.fileSize || 'Calculando...'}</span>
                         <span>•</span>
-                        <span>Versión: 1.0.0</span>
+                        <span>Versión: {buildResult?.version || '1.0.0'}</span>
                         <span>•</span>
-                        <span>ID: COB_123456</span>
+                        <span>ID: {buildResult?.cobradorId || 'Generando...'}</span>
                       </div>
                     </div>
                   </div>
@@ -217,6 +240,7 @@ export default function NuevoCobradorPage() {
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    onClick={() => downloadApk()}
                     className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors"
                   >
                     <Download className="w-5 h-5" />
@@ -312,10 +336,8 @@ export default function NuevoCobradorPage() {
                       nombre: '',
                       telefono: '',
                       dni: '',
-                      email: '',
-                      foto: null
+                      email: ''
                     })
-                    setPreviewUrl(null)
                   }}
                   className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors"
                 >
@@ -360,8 +382,8 @@ export default function NuevoCobradorPage() {
             Información Personal
           </h2>
           
-          {/* Primera fila: Nombre, DNI, Foto */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          {/* Primera fila: Nombre, DNI */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             {/* Nombre */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -390,36 +412,6 @@ export default function NuevoCobradorPage() {
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 placeholder="12345678"
               />
-            </div>
-
-            {/* Foto */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Foto de Perfil
-              </label>
-              <label className="cursor-pointer block">
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoChange}
-                />
-                <div className="relative h-[50px] bg-gray-100 rounded-xl flex items-center justify-center border-2 border-dashed border-gray-300 hover:border-blue-500 hover:bg-gray-50 transition-all">
-                  {previewUrl ? (
-                    <div className="absolute inset-0 rounded-xl overflow-hidden">
-                      <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <Camera className="w-6 h-6 text-white" />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-gray-500">
-                      <Camera className="w-5 h-5" />
-                      <span className="text-sm">Subir foto</span>
-                    </div>
-                  )}
-                </div>
-              </label>
             </div>
           </div>
 

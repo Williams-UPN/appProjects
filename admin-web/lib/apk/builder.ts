@@ -17,7 +17,7 @@ export class APKBuilder {
     nombre: string
     token: string
     credenciales: any
-  }): Promise<string> {
+  }): Promise<{ path: string; fileSize: string; version: string }> {
     const { cobradorId, nombre, token, credenciales } = config
     
     console.log(`[APKBuilder] Iniciando build para ${nombre}`)
@@ -39,38 +39,29 @@ export class APKBuilder {
     console.log(`[APKBuilder] Generando APK personalizada...`)
     
     try {
-      // 1. Copiar APK base a ubicación temporal
-      const tempApkPath = path.join(outputPath, 'temp.apk')
-      await fs.promises.copyFile(this.baseApkPath, tempApkPath)
+      // 1. Simplemente copiar APK base preservando integridad
+      console.log(`[APKBuilder] Copiando APK base para cobrador: ${nombre}`)
+      await fs.promises.copyFile(this.baseApkPath, outputApkPath)
       
-      // 2. Importar y usar el modificador
-      const { APKConfigModifier } = await import('./config-modifier')
+      console.log(`[APKBuilder] Credenciales almacenadas en base de datos:`)
+      console.log(`- Token: ${token}`)
+      console.log(`- Nombre: ${nombre}`)
+      console.log(`- DNI: ${credenciales.dni}`)
       
-      // 3. Verificar estructura del APK
-      const hasValidStructure = await APKConfigModifier.verifyAPKStructure(tempApkPath)
+      // Verificar que el archivo se copió correctamente y calcular tamaño
+      const stats = await fs.promises.stat(outputApkPath)
+      const fileSizeBytes = stats.size
+      const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(1)
       
-      if (hasValidStructure) {
-        // 4. Modificar APK con credenciales
-        await APKConfigModifier.modifyAPK(tempApkPath, {
-          cobrador_token: token,
-          cobrador_nombre: nombre,
-          cobrador_dni: credenciales.dni || 'N/A',
-          supabase_url: credenciales.supabase_url,
-          supabase_key: credenciales.supabase_key
-        })
-        
-        console.log(`[APKBuilder] APK modificado con credenciales embebidas`)
-      } else {
-        console.warn(`[APKBuilder] APK no tiene estructura válida, usando sin modificar`)
-      }
-      
-      // 5. Mover a ubicación final
-      await fs.promises.rename(tempApkPath, outputApkPath)
-      
+      console.log(`[APKBuilder] APK copiado exitosamente: ${fileSizeMB} MB`)
       console.log(`[APKBuilder] APK generada exitosamente: ${outputApkPath}`)
       
-      // Retornar ruta relativa para almacenar en BD
-      return path.relative(process.cwd(), outputApkPath)
+      // Retornar información completa del APK
+      return {
+        path: path.relative(process.cwd(), outputApkPath),
+        fileSize: `${fileSizeMB} MB`,
+        version: '1.0.0'
+      }
       
     } catch (error) {
       console.error('[APKBuilder] Error generando APK:', error)
@@ -129,7 +120,7 @@ export class APKBuilderFull extends APKBuilder {
     nombre: string
     token: string
     credenciales: any
-  }): Promise<string> {
+  }): Promise<{ path: string; fileSize: string; version: string }> {
     const { cobradorId, nombre, token, credenciales } = config
     
     // 1. Crear directorio temporal
@@ -170,7 +161,16 @@ export class APKBuilderFull extends APKBuilder {
     await fs.promises.rm(tempDir, { recursive: true, force: true })
     await fs.promises.unlink(unsignedApk)
     
-    return path.relative(process.cwd(), signedApk)
+    // Calcular tamaño del archivo
+    const stats = await fs.promises.stat(signedApk)
+    const fileSizeBytes = stats.size
+    const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(1)
+    
+    return {
+      path: path.relative(process.cwd(), signedApk),
+      fileSize: `${fileSizeMB} MB`,
+      version: '1.0.0'
+    }
   }
   
   private async signAPK(inputPath: string, outputPath: string): Promise<void> {

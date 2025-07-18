@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image/image.dart' as img;
 import '../../models/gasto.dart';
+import '../../main.dart';
 
 abstract class GastosDatasource {
   Future<String?> uploadFoto(File imageFile);
@@ -94,7 +95,14 @@ class SupabaseGastosDatasource implements GastosDatasource {
   Future<bool> crearGasto(Gasto gasto) async {
     debugPrint('🔔 [GastosDS] crearGasto: ${gasto.toJson()}');
     try {
-      await _supabase.from('gastos').insert(gasto.toJson());
+      final Map<String, dynamic> gastoData = gasto.toJson();
+      
+      // Agregar token del cobrador si está disponible
+      if (appConfig != null && appConfig!['cobrador_token'] != null) {
+        gastoData['cobrador_token'] = appConfig!['cobrador_token'];
+      }
+
+      await _supabase.from('gastos').insert(gastoData);
 
       debugPrint('✅ [GastosDS] Gasto creado exitosamente');
       return true;

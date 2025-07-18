@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
+import 'dart:convert';
 
 import 'data/datasources/cliente_datasource.dart';
 import 'data/datasources/gastos_datasource.dart'; // NUEVO IMPORT
@@ -26,6 +27,9 @@ import 'screens/tarjeta_cliente/tarjeta_cliente_screen.dart';
 import 'screens/clientes_cercanos/clientes_cercanos_screen.dart';
 import 'screens/agregar_gastos/agregar_gastos_screen.dart';
 
+// Variable global para configuración embebida
+Map<String, dynamic>? appConfig;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -33,10 +37,25 @@ Future<void> main() async {
     statusBarIconBrightness: Brightness.dark,
   ));
 
+  // Cargar configuración embebida
+  try {
+    final String configString = await rootBundle.loadString('assets/config/app_config.json');
+    appConfig = json.decode(configString);
+    // Config cargada exitosamente
+  } catch (e) {
+    // Sin configuración embebida, usando .env
+    appConfig = null;
+  }
+
   await dotenv.load(fileName: '.env');
+  
+  // Usar config embebida si existe, sino usar .env
+  final supabaseUrl = appConfig?['supabase_url'] ?? dotenv.env['SUPABASE_URL']!;
+  final supabaseKey = appConfig?['supabase_key'] ?? dotenv.env['SUPABASE_ANON_KEY']!;
+  
   await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    url: supabaseUrl,
+    anonKey: supabaseKey,
   );
 
   runApp(

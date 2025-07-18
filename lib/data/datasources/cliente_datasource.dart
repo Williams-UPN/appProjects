@@ -7,6 +7,7 @@ import '../../models/cliente_detail_read.dart';
 import '../../models/pago_read.dart';
 import '../../models/cronograma_read.dart';
 import '../../models/historial_read.dart';
+import '../../main.dart';
 
 abstract class ClienteDatasource {
   Future<List<ClienteRead>> fetchClientes({int page = 0, int size = 20});
@@ -208,6 +209,11 @@ class SupabaseClienteDatasource implements ClienteDatasource {
         'monto_pagado': monto,
       };
 
+      // Agregar token del cobrador si está disponible
+      if (appConfig != null && appConfig!['cobrador_token'] != null) {
+        pagoData['cobrador_token'] = appConfig!['cobrador_token'];
+      }
+
       // Agregar ubicación si está disponible
       if (latitud != null && longitud != null) {
         pagoData['latitud'] = latitud;
@@ -231,10 +237,17 @@ class SupabaseClienteDatasource implements ClienteDatasource {
     debugPrint('🔔 [DS] registrarEvento → clienteId=$clienteId, '
         'descripcion="$descripcion"');
     try {
-      final res = await _supabase.from('historial_eventos').insert({
+      final Map<String, dynamic> eventoData = {
         'cliente_id': clienteId,
         'descripcion': descripcion,
-      });
+      };
+
+      // Agregar token del cobrador si está disponible
+      if (appConfig != null && appConfig!['cobrador_token'] != null) {
+        eventoData['cobrador_token'] = appConfig!['cobrador_token'];
+      }
+
+      final res = await _supabase.from('historial_eventos').insert(eventoData);
       debugPrint('✅ [DS] insert evento result = $res');
       return true;
     } catch (e) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'main_menu/main_menu_screen.dart';
+import '../main.dart'; // Para acceder a appConfig
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -25,11 +26,24 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF90CAF9),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(
+              color: Color(0xFF90CAF9),
+            ),
+            if (appConfig != null && appConfig!['cobrador_nombre'] != 'PLACEHOLDER_NOMBRE')
+              Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: Text(
+                  'Bienvenido ${appConfig!['cobrador_nombre']}',
+                  style: const TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+              ),
+          ],
         ),
       ),
     );
