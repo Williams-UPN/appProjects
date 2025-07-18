@@ -7,10 +7,10 @@ import AdmZip from 'adm-zip'
 const execAsync = promisify(exec)
 
 export class APKBuilder {
-  private baseApkPath = path.join(process.cwd(), 'storage/base-apk/app-release.apk')
-  private outputDir = path.join(process.cwd(), 'storage/generated')
-  private toolsDir = path.join(process.cwd(), 'tools')
-  private keystorePath = path.join(process.cwd(), 'storage/keystore/release.keystore')
+  protected baseApkPath = path.join(process.cwd(), 'storage/base-apk/app-release.apk')
+  protected outputDir = path.join(process.cwd(), 'storage/generated')
+  protected toolsDir = path.join(process.cwd(), 'tools')
+  protected keystorePath = path.join(process.cwd(), 'storage/keystore/release.keystore')
   
   async buildAPK(config: {
     cobradorId: string

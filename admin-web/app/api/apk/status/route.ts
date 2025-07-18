@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
 }
 
 function calculateProgress(estado: string, metodo: string): number {
-  const progressMap = {
+  const progressMap: Record<string, number> = {
     'pending': 0,
     'building': metodo === 'local' ? 50 : 30,
     'completed': 100,
