@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
           
           if (status.completed) {
             // Actualizar estado en base de datos
-            const updateData = {
+            const updateData: any = {
               estado: status.success ? 'completed' : 'failed',
               fecha_fin: new Date().toISOString(),
               error_mensaje: status.error || null
