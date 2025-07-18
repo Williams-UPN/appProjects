@@ -57,8 +57,9 @@ export async function GET(request: NextRequest) {
       }
       
       apkPath = build.apk_url
-      if (build.cobradores) {
-        fileName = `APK_${build.cobradores.nombre.replace(/\s+/g, '')}_${build.cobradores.apk_version || 'v1'}.apk`
+      if (build.cobradores && Array.isArray(build.cobradores) && build.cobradores.length > 0) {
+        const cobrador = build.cobradores[0]
+        fileName = `APK_${cobrador.nombre.replace(/\s+/g, '')}_${cobrador.apk_version || 'v1'}.apk`
       }
     }
     
